@@ -1,47 +1,54 @@
 # based on https://github.com/Cellular-Imaging-Amsterdam-UMC/crxReader-Python
+# which is based on https://www.mathworks.com/matlabcentral/fileexchange/154556-crxreader
 
-import sqlite3
-import numpy as np
-from PIL import Image
-import tifffile
-import os
 from datetime import datetime, timedelta
+import numpy as np
+from ome_zarr.format import FormatV04
+from ome_zarr.io import parse_url
+from ome_zarr.writer import write_image
+from ome_zarr_util import create_axes_metadata
+import os
+import sqlite3
+import tifffile
+import zarr
 
 
 class CRXReader:
-    def __init__(self, **kwargs):
-        self.verbose = kwargs.get('verbose', False)
-        self.channel = kwargs.get('channel', 1)
-        self.level = kwargs.get('level', 0)
-        self.time_point = kwargs.get('time_point', 0)
-        self.tiff_compression = kwargs.get('tiff_compression', 'deflate')
-        self.show_well_matrix = kwargs.get('show_well_matrix', False)
-        self.info = {}
+    def __init__(self, experiment_file, channel=None, level=0, time_point=0, dype=np.uint16, verbose=True):
+        self.experiment_file = experiment_file
 
-    def read_experiment_info(self, experiment_file):
-        if not os.path.isfile(experiment_file):
-            self.log('Error: File not found!')
-            return None
+        if not os.path.isfile(self.experiment_file):
+            raise ValueError('Experimenter file not found!')
 
-        self.info = {'experiment_file': experiment_file, 'images_file': None}
+        self.verbose = verbose
+        self.channel = channel
+        self.level = level
+        self.time_point = time_point
+        self.dtype = dype
+        self.info = None
+        self.imdata = None
+
+    def read_experiment_info(self):
+        self.info = {'experiment_file': self.experiment_file, 'images_file': None}
 
         self.log('Reading Info from CellReporterXpress experiment.db file')
         try:
-            filepath = os.path.dirname(experiment_file)
-            with sqlite3.connect(experiment_file) as conn:
-                cursor = conn.cursor()
-                self._fetch_time_series_info(cursor, filepath)
-                self._fetch_experiment_metadata(cursor)
-                self._fetch_well_info(cursor)
+            filepath = os.path.dirname(self.experiment_file)
+            with sqlite3.connect(self.experiment_file) as conn:
+                conn.row_factory = self.dict_factory
+                cur = conn.cursor()
+                self._fetch_time_series_info(cur, filepath)
+                self._fetch_experiment_metadata(cur)
+                self._fetch_well_info(cur)
         except sqlite3.Error as e:
-            self.log(f'Error Reading Info: {str(e)}')
+            self.log(f'Error Reading Info: {e}')
             return None
 
         return self.info
 
-    def _fetch_time_series_info(self, cursor, filepath):
-        cursor.execute("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase")
-        time_series_ids = [row[0] for row in cursor.fetchall()]
+    def _fetch_time_series_info(self, cur, filepath):
+        cur.execute("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase")
+        time_series_ids = [list(row.values())[0] for row in cur.fetchall()]
 
         if len(time_series_ids) == 1 and time_series_ids[0] == 0:
             self.time_point = 0
@@ -49,107 +56,135 @@ class CRXReader:
             raise ValueError(f"Invalid TimePoint: {self.time_point}. Available values: {time_series_ids}")
         self.info['images_file'] = os.path.join(filepath, f'images-{self.time_point}.db')
 
-    def _fetch_experiment_metadata(self, cursor):
-        cursor.execute('SELECT DateCreated, Creator, Name FROM ExperimentBase')
-        info = cursor.fetchone()
-        dt = self.convert_dotnet_ticks_to_datetime(int(info[0]))
-        self.info.update({'name': info[2], 'creator': info[1], 'dt': dt})
+    def _fetch_experiment_metadata(self, cur):
+        cur.execute('SELECT DateCreated, Creator, Name FROM ExperimentBase')
+        info = cur.fetchone()
+        info['DateCreated'] = self.convert_dotnet_ticks_to_datetime(int(info['DateCreated']))
+        self.info.update(info)
 
-    def _fetch_well_info(self, cursor):
-        cursor.execute('SELECT SensorSizeYPixels, SensorSizeXPixels, Objective, PixelSizeUm, SensorBitness, SitesX, SitesY FROM AcquisitionExp, AutomaticZonesParametersExp')
-        image_info = cursor.fetchone()
-        cursor.execute('SELECT Emission, Excitation, Dye, channelNumber, ColorName FROM ImagechannelExp')
-        channel_info = cursor.fetchall()
+    def _fetch_well_info(self, cur):
+        cur.execute('SELECT SensorSizeYPixels, SensorSizeXPixels, Objective, PixelSizeUm, SensorBitness, SitesX, SitesY FROM AcquisitionExp, AutomaticZonesParametersExp')
+        well_info = cur.fetchone()
+        cur.execute('SELECT Emission, Excitation, Dye, channelNumber, ColorName FROM ImagechannelExp')
+        channel_info = cur.fetchall()
 
-        self.info['well_info'] = self.get_well_info_dict(image_info, channel_info)
+        well_info['channels'] = channel_info
 
-        cursor.execute('SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1')
-        wells = cursor.fetchall()
+        self.info['well_info'] = well_info
+
+        cur.execute('SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1')
+        wells = cur.fetchall()
         self.info['numwells'] = len(wells)
-        self.info['wells'] = {well[0]: well[1] for well in wells}
+        self.info['wells'] = {well['Name']: well['ZoneIndex'] for well in wells}
 
     def _read_well_info(self, well_id):
+        well_id = self.remove_leading_zero(well_id)
         well_ids = self.info.get('wells', {})
 
         if well_id not in well_ids:
-            self.log('Error: Well not found!')
+            raise ValueError(f"Invalid Well: {well_id}. Available values: {well_ids}")
 
         zone_index = well_ids[well_id]
         with sqlite3.connect(self.info['experiment_file']) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            conn.row_factory = self.dict_factory
+            cur = conn.cursor()
+            cur.execute('''
                 SELECT CoordX, CoordY, SizeX, SizeY, BitsPerPixel, ImageIndex, channelId
                 FROM SourceImageBase
                 WHERE ZoneIndex = ? AND level = ? AND TimeSeriesElementId = ?
                 ORDER BY CoordX ASC, CoordY ASC
             ''', (zone_index, self.level, self.time_point))
-            well_info = cursor.fetchall()
+            well_info = cur.fetchall()
 
         # filter channel
-        well_info = [info for info in well_info if info[6] == self.channel - 1]
+        if self.channel is not None:
+            well_info = [info for info in well_info if info['ChannelId'] == self.channel]
         if not well_info:
             self.log(f'Error: No data found for well {well_id}')
         return well_info
 
     def _assemble_image_data(self, well_info):
         well_info = np.asarray(well_info)
-        xmax = well_info[well_info[:, 1] == 0, 2].sum()
-        ymax = well_info[well_info[:, 0] == 0, 3].sum()
-        imdata = np.zeros((ymax, xmax), dtype=np.uint16)
+        xmax = np.max([info['CoordX'] + info['SizeX'] for info in well_info])
+        ymax = np.max([info['CoordY'] + info['SizeY'] for info in well_info])
+        nchannels = len(set([info['ChannelId'] for info in well_info]))
+        imdata = np.zeros((nchannels, ymax, xmax), dtype=self.dtype)
 
         with open(self.info['images_file'], 'rb') as fid:
             for info in well_info:
-                fid.seek(info[5])
-                sub_image_data = np.fromfile(fid, dtype=np.uint16, count=info[2] * info[3])
-                sub_image_data = sub_image_data.reshape((info[3], info[2]))
-                imdata[info[1]:info[1] + info[3], info[0]:info[0] + info[2]] = sub_image_data
+                fid.seek(info['ImageIndex'])
+                coordx, coordy = info['CoordX'], info['CoordY']
+                sizex, sizey = info['SizeX'], info['SizeY']
+                channeli = info['ChannelId']
+                subtile_data = np.fromfile(fid, dtype=self.dtype, count=sizey * sizex)
+                subtile_data = subtile_data.reshape((sizey, sizex))
+                imdata[channeli, coordy:coordy + sizey, coordx:coordx + sizex] = subtile_data
 
-        return imdata
+        self.imdata = imdata
 
-    def _extract_tile(self, imdata, tile_id):
+    def _extract_tile(self, tile_id=None):
         well_info = self.info['well_info']
-        tilex = well_info['tilex']
-        tiley = well_info['tiley']
-        xs = well_info['xs']
-        ys = well_info['ys']
+        tilex = well_info['SitesX']
+        tiley = well_info['SitesY']
+        sizex = well_info['SensorSizeXPixels']
+        sizey = well_info['SensorSizeYPixels']
 
-        if isinstance(tile_id, str) and tile_id.lower() == 'all':
+        if tile_id is None:
+            # Return full image data
+            return self.imdata
+        if tile_id < 0:
+            # Return list of all tiles
             tiles = []
             for ty in range(tiley):
                 for tx in range(tilex):
-                    x_start = tx * xs
-                    y_start = ty * ys
-                    tiles.append(imdata[y_start:y_start + ys, x_start:x_start + xs])
+                    startx = tx * sizex
+                    starty = ty * sizey
+                    tiles.append(self.imdata[:, starty:starty + sizey, startx:startx + sizex])
             return tiles
-        elif isinstance(tile_id, int) and 1 <= tile_id <= tilex * tiley:
-            tx = (tile_id - 1) % tilex
-            ty = (tile_id - 1) // tilex
-            x_start = tx * xs
-            y_start = ty * ys
-            return imdata[y_start:y_start + ys, x_start:x_start + xs]
+        elif 0 <= tile_id < tilex * tiley:
+            # Return specific tile
+            tx = tile_id % tilex
+            ty = tile_id // tilex
+            startx = tx * sizex
+            starty = ty * sizey
+            return self.imdata[:, starty:starty + sizey, startx:startx + sizex]
         else:
-            self.log(f'Error: Invalid tile {tile_id}')
-            return None
+            raise ValueError(f"Invalid tile: {tile_id}")
 
-    def extract_data(self, base_filename, well_id, tile_id=None):
+    def extract_data(self, base_filename, well_id, tile_id=None, tiff_compression='deflate'):
+        if not self.info:
+            self.read_experiment_info()
+
         filepath, filename = os.path.split(base_filename)
         filetitle, ext = os.path.splitext(filename)
 
-        filename = os.path.join(filepath, f"{filetitle}_ch{self.channel}_{self.add_leading_zero(well_id)}")
+        filename = f"{filetitle}"
+        if self.channel is not None:
+            filename += f"_ch{self.channel}"
+        filename += f"_{self.add_leading_zero(well_id)}"
         well_info = self._read_well_info(well_id)
-        imdata = self._assemble_image_data(well_info)
-        if tile_id is not None:
-            imdata = self._extract_tile(imdata, tile_id)
+        if self.imdata is None:
+            self._assemble_image_data(well_info)
+        imdata = self._extract_tile(tile_id).squeeze()
+        if tile_id is not None and tile_id >= 0:
             filename += f"_{self.add_leading_zero(tile_id)}"
         if self.level > 0:
             filename += f"_level{self.level}"
-        filename += ext
 
-        if ext == '.tif':
-            with tifffile.TiffWriter(filename, bigtiff=False) as tif:
-                tif.write(imdata, compression=self.tiff_compression.lower())
-        elif ext == '.png':
-            Image.fromarray(imdata).save(filename)
+        filename = os.path.join(filepath, filename + ext)
+        if ext.lower() in ['.zar', '.zarr']:
+            # TODO: convert to plate ome-zarr
+            # TODO: add channel metadata
+            nchannels = max(len(self.info['well_info']['channels']), 1)
+            dim_order = 'yx'
+            if nchannels > 1:
+                dim_order = 'c' + dim_order
+            axes = create_axes_metadata(dim_order)
+            root = zarr.open_group(store=parse_url(filename, mode="w").store, mode="w", zarr_version=2)
+            write_image(image=imdata, group=root, axes=axes, fmt=FormatV04())
+        elif ext.lower() in ['.tif', '.tiff']:
+            with tifffile.TiffWriter(filename) as tif:
+                tif.write(imdata, compression=tiff_compression, dtype=self.dtype)
 
         self.log(f"Image saved as {filename}")
 
@@ -158,10 +193,10 @@ class CRXReader:
             print(text)
 
     @staticmethod
-    def add_leading_zero(input_string):
+    def add_leading_zero(input_string, num_digits=2):
         output = str(input_string)
-        while len(output) < 2:
-            return '0' + output
+        while len(output) < num_digits:
+            output = '0' + output
         return output
 
     @staticmethod
@@ -178,25 +213,44 @@ class CRXReader:
 
     @staticmethod
     def convert_dotnet_ticks_to_datetime(net_ticks):
-        TICKS_AT_EPOCH = 621355968000000000
-        TICKS_PER_SECOND = 10000000
-        ticks_since_epoch = net_ticks - TICKS_AT_EPOCH
-        seconds_since_epoch = ticks_since_epoch // TICKS_PER_SECOND
-        microseconds_remainder = (ticks_since_epoch % TICKS_PER_SECOND) // 10
-        return datetime(1970, 1, 1) + timedelta(seconds=seconds_since_epoch, microseconds=microseconds_remainder)
+        return datetime(1, 1, 1) + timedelta(microseconds=net_ticks // 10)
+
+    def display_well_matrix(self):
+        """
+        Displays a matrix of wells used for each timepoint with well names.
+        """
+        with sqlite3.connect(self.experiment_file) as conn:
+            cur = conn.cursor()
+            cur.row_factory = self.dict_factory
+
+            # Fetch all TimeSeriesElementId values
+            cur.execute("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase")
+            time_series_ids = [row['TimeSeriesElementId'] for row in cur.fetchall()]
+
+            # Fetch well data
+            cur.execute("SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1")
+            wells = cur.fetchall()
+
+            well_names = [self.add_leading_zero(well['Name']) for well in wells]
+            well_matrix = []
+            for timepoint in time_series_ids:
+                cur.execute("""
+                    SELECT DISTINCT Well.Name FROM SourceImageBase
+                    JOIN Well ON SourceImageBase.ZoneIndex = Well.ZoneIndex
+                    WHERE TimeSeriesElementId = ?
+                """, (timepoint,))
+                wells_at_timepoint = [self.add_leading_zero(row['Name']) for row in cur.fetchall()]
+
+                row = [well if well in wells_at_timepoint else '' for well in well_names]
+                well_matrix.append(row)
+
+            print("Timepoint x Well Matrix:")
+            for idx, row in enumerate(well_matrix):
+                print(f"Timepoint {time_series_ids[idx]}: {row}")
 
     @staticmethod
-    def get_well_info_dict(image_info, channel_info):
-        well_info = {
-            'channels': len(channel_info),
-            'tilex': image_info[5],
-            'tiley': image_info[6],
-            'tiles': image_info[5] * image_info[6],
-            'bits': image_info[4],
-            'xs': image_info[0],
-            'ys': image_info[0],
-            'xres': image_info[3],
-            'yres': image_info[3],
-            'objective': image_info[2]
-        }
-        return well_info
+    def dict_factory(cur, row):
+        dct = {}
+        for index, column in enumerate(cur.description):
+            dct[column[0]] = row[index]
+        return dct
