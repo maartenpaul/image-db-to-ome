@@ -1,13 +1,13 @@
 # based on https://github.com/Cellular-Imaging-Amsterdam-UMC/crxReader-Python
-# which is based on https://www.mathworks.com/matlabcentral/fileexchange/154556-crxreader
+# which is based on https://github.com/Cellular-Imaging-Amsterdam-UMC/crxReader
 
 from datetime import datetime, timedelta
 import numpy as np
-from ome_zarr.format import FormatV04
 from ome_zarr.io import parse_url
-from ome_zarr.writer import write_image
-from ome_zarr_util import create_axes_metadata
+from ome_zarr.writer import write_image, write_plate_metadata, write_well_metadata
+from ome_zarr_util import create_axes_metadata, create_channel_metadata
 import os
+import re
 import sqlite3
 import tifffile
 import zarr
@@ -48,7 +48,12 @@ class CRXReader:
 
     def _fetch_time_series_info(self, cur, filepath):
         cur.execute("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase")
-        time_series_ids = [list(row.values())[0] for row in cur.fetchall()]
+        time_series_ids = sorted([list(row.values())[0] for row in cur.fetchall()])
+        self.info['time_points'] = time_series_ids
+
+        cur.execute("SELECT DISTINCT level FROM SourceImageBase")
+        level_ids = sorted([list(row.values())[0] for row in cur.fetchall()])
+        self.info['levels'] = level_ids
 
         if len(time_series_ids) == 1 and time_series_ids[0] == 0:
             self.time_point = 0
@@ -72,13 +77,25 @@ class CRXReader:
 
         self.info['well_info'] = well_info
 
-        cur.execute('SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1')
+        cur.execute('SELECT DISTINCT Name FROM Well')
         wells = cur.fetchall()
-        self.info['numwells'] = len(wells)
-        self.info['wells'] = {well['Name']: well['ZoneIndex'] for well in wells}
+        zone_names = [well['Name'] for well in wells]
+        rows = set()
+        cols = set()
+        for zone_name in zone_names:
+            row, col = self.split_well_name(zone_name)
+            rows.add(row)
+            cols.add(col)
+        well_info['rows'] = sorted(list(rows))
+        well_info['columns'] = sorted(list(cols))
+
+        cur.execute('SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1')
+        image_wells = cur.fetchall()
+        self.info['numwells'] = len(image_wells)
+        self.info['wells'] = {well['Name']: well['ZoneIndex'] for well in image_wells}
 
     def _read_well_info(self, well_id):
-        well_id = self.remove_leading_zero(well_id)
+        well_id = self.remove_leading_zeros(well_id)
         well_ids = self.info.get('wells', {})
 
         if well_id not in well_ids:
@@ -172,25 +189,77 @@ class CRXReader:
             filename += f"_level{self.level}"
 
         filename = os.path.join(filepath, filename + ext)
-        if ext.lower() in ['.zar', '.zarr']:
-            # TODO: convert to plate ome-zarr
-            # TODO: add channel metadata
-            nchannels = max(len(self.info['well_info']['channels']), 1)
-            dim_order = 'yx'
-            if nchannels > 1:
-                dim_order = 'c' + dim_order
-            axes = create_axes_metadata(dim_order)
-            root = zarr.open_group(store=parse_url(filename, mode="w").store, mode="w", zarr_version=2)
-            write_image(image=imdata, group=root, axes=axes, fmt=FormatV04())
-        elif ext.lower() in ['.tif', '.tiff']:
+        if ext.lower() in ['.tif', '.tiff']:
             with tifffile.TiffWriter(filename) as tif:
                 tif.write(imdata, compression=tiff_compression, dtype=self.dtype)
 
         self.log(f"Image saved as {filename}")
 
+    def _extract_well_to_zarr(self, zarr_group, well_id, tile_id=None, ome_format=None):
+        well_info = self._read_well_info(well_id)
+        if self.imdata is None:
+            self._assemble_image_data(well_info)
+        imdata = self._extract_tile(tile_id).squeeze()
+        nchannels = max(len(self.info['well_info']['channels']), 1)
+        dim_order = 'yx'
+        if nchannels > 1:
+            dim_order = 'c' + dim_order
+        axes = create_axes_metadata(dim_order)
+        write_image(image=imdata, group=zarr_group, axes=axes, fmt=ome_format)
+
+    def export_to_zarr(self, filename, zarr_version=2, ome_version='0.4'):
+        # https://ome-zarr.readthedocs.io/en/stable/python.html#writing-hcs-datasets-to-ome-ngff
+        if not self.info:
+            self.read_experiment_info()
+
+        if ome_version == '0.5':
+            from ome_zarr.format import FormatV05
+            ome_format = FormatV05()
+        else:
+            from ome_zarr.format import FormatV04
+            ome_format = FormatV04()
+
+        zarr_root = zarr.open_group(store=parse_url(filename, mode="w").store, mode="w", zarr_version=zarr_version)
+
+        row_names = self.info['well_info']['rows']
+        col_names = self.info['well_info']['columns']
+        # TODO: wells need sorting (by: [row, col])?
+        well_paths = ['/'.join(self.split_well_name(info)) for info in self.info['wells']]
+        field_paths = ['0']
+
+        write_plate_metadata(zarr_root, row_names, col_names, well_paths)
+        for well, zone_id in self.info['wells'].items():
+            row, col = self.split_well_name(well)
+            row_group = zarr_root.require_group(row)
+            well_group = row_group.require_group(col)
+            write_well_metadata(well_group, field_paths)
+            for fi, field in enumerate(field_paths):
+                image_group = well_group.require_group(str(field))
+                self._extract_well_to_zarr(image_group, well, ome_format=ome_format)
+
+        #channels = self.info['well_info']['channels']
+        #nchannels = max(len(channels), 1)
+        #zarr_root.attrs['omero'] = create_channel_metadata(imdata, channels, nchannels, ome_version)
+
+        self.log(f"Exported as {filename}")
+
     def log(self, text):
         if self.verbose:
             print(text)
+
+    @staticmethod
+    def split_well_name(well_name, remove_leading_zeros=True):
+        matches = re.findall(r'(\D+)(\d+)', well_name)
+        if len(matches) > 0:
+            well_name = matches[0]
+            if remove_leading_zeros:
+                try:
+                    well_name = well_name[0], str(int(well_name[1]))
+                except ValueError:
+                    pass
+            return well_name
+        else:
+            raise ValueError(f"Invalid well name format: {well_name}. Expected format like 'A1', 'B2', etc.")
 
     @staticmethod
     def add_leading_zero(input_string, num_digits=2):
@@ -200,16 +269,13 @@ class CRXReader:
         return output
 
     @staticmethod
-    def remove_leading_zero(well_name):
-        if not well_name:
-            return well_name
-        letter_part = well_name[0]
-        digit_part = well_name[1:]
+    def remove_leading_zeros(well_name):
+        well_row, well_col = CRXReader.split_well_name(well_name)
         try:
-            digit_part_noleading = str(int(digit_part))
+            well_col = str(int(well_col))
         except ValueError:
-            return well_name
-        return letter_part + digit_part_noleading
+            pass
+        return well_row + well_col
 
     @staticmethod
     def convert_dotnet_ticks_to_datetime(net_ticks):

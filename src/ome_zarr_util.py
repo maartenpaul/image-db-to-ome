@@ -50,10 +50,7 @@ def create_transformation_metadata(dimension_order, pixel_size_um, scale, transl
     return metadata
 
 
-def create_channel_metadata(source, ome_version):
-    channels = source.get_channels()
-    nchannels = source.get_nchannels()
-
+def create_channel_metadata(imdata, channels, nchannels, ome_version):
     if len(channels) < nchannels == 3:
         labels = ['Red', 'Green', 'Blue']
         colors = [(1, 0, 0, 1), (0, 1, 0, 1), (0, 0, 1, 1)]
@@ -65,7 +62,7 @@ def create_channel_metadata(source, ome_version):
         color = channel.get('color', (1, 1, 1, 1))
         channel['color'] = rgba_to_hexrgb(color)
         if 'window' not in channel:
-            channel['window'] = source.get_channel_window(channeli)
+            channel['window'] = get_channel_window(imdata, channeli)
         omezarr_channels.append(channel)
 
     metadata = {
