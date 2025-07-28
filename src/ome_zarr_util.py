@@ -60,7 +60,7 @@ def create_channel_metadata(imdata, channels, nchannels, ome_version):
     for channeli, channel0 in enumerate(channels):
         channel = channel0.copy()
         color = channel.get('color', (1, 1, 1, 1))
-        channel['color'] = rgba_to_hexrgb(color)
+        channel['color'] = color
         if 'window' not in channel:
             channel['window'] = get_channel_window(imdata, channeli)
         omezarr_channels.append(channel)
@@ -92,8 +92,3 @@ def scale_dimensions_dict(shape0, scale):
             shape1 = int(shape1 * scale)
         shape[dimension] = shape1
     return shape
-
-
-def rgba_to_hexrgb(rgba: list) -> str:
-    hexrgb = ''.join([hex(int(x * 255))[2:].upper().zfill(2) for x in rgba[:3]])
-    return hexrgb

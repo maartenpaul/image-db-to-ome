@@ -51,16 +51,24 @@ class CRXReader:
 
     def _fetch_experiment_metadata(self):
         info = self.db.fetch_all('SELECT DateCreated, Creator, Name FROM ExperimentBase')[0]
-        info['DateCreated'] = self.convert_dotnet_ticks_to_datetime(int(info['DateCreated']))
+        info['DateCreated'] = self.convert_dotnet_ticks_to_datetime(info['DateCreated'])
         self.info.update(info)
+
+        acquisitions = self.db.fetch_all('SELECT Name, Description, DateCreated, DateModified FROM AcquisitionExp')
+        for acquisition in acquisitions:
+            acquisition['DateCreated'] = self.convert_dotnet_ticks_to_datetime(acquisition['DateCreated'])
+            acquisition['DateModified'] = self.convert_dotnet_ticks_to_datetime(acquisition['DateModified'])
+        self.info['acquisitions'] = acquisitions
 
     def _fetch_well_info(self):
         well_info = self.db.fetch_all('''SELECT SensorSizeYPixels, SensorSizeXPixels, Objective, PixelSizeUm, SensorBitness, SitesX, SitesY
                                          FROM AcquisitionExp, AutomaticZonesParametersExp''')[0]
         self.info['well_info'] = well_info
 
-        channel_info = self.db.fetch_all('SELECT Emission, Excitation, Dye, channelNumber, ColorName FROM ImagechannelExp')
-        self.info['well_info']['channels'] = channel_info
+        channel_infos = self.db.fetch_all('SELECT Emission, Excitation, Dye, ChannelNumber, Color FROM ImagechannelExp')
+        for channel_info in channel_infos:
+            channel_info['Color'] = channel_info['Color'][1:]   # remove leading '#'
+        self.info['well_info']['channels'] = channel_infos
 
         wells = self.db.fetch_all('SELECT DISTINCT Name FROM Well')
         zone_names = [well['Name'] for well in wells]
@@ -213,7 +221,17 @@ class CRXReader:
         well_paths = ['/'.join(self.split_well_name(info)) for info in self.info['wells']]
         field_paths = ['0']
 
-        write_plate_metadata(zarr_root, row_names, col_names, well_paths)
+        acquisitions = []
+        for index, acq in enumerate(self.info.get('acquisitions', [])):
+            acquisitions.append({
+                'id': index,
+                'name': acq['Name'],
+                'description': acq['Description'],
+                'date_created': acq['DateCreated'].isoformat(),
+                'date_modified': acq['DateModified'].isoformat()
+            })
+
+        write_plate_metadata(zarr_root, row_names, col_names, well_paths, acquisitions=acquisitions)
         for well, zone_id in self.info['wells'].items():
             row, col = self.split_well_name(well)
             row_group = zarr_root.require_group(row)
