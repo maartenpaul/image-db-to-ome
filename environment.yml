@@ -1,0 +1,10 @@
+name: crx-to-zarr-env
+channels:
+ - conda-forge
+ - defaults
+dependencies:
+ - python=3.12
+ - numpy
+ - zarr >= 3
+ - ome-zarr
+ - tifffile

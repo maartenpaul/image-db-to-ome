@@ -1,5 +1,6 @@
 # based on https://github.com/Cellular-Imaging-Amsterdam-UMC/crxReader-Python
 # which is based on https://github.com/Cellular-Imaging-Amsterdam-UMC/crxReader
+# Screen Plate Well (SPW) - High Content Screening (HCS) https://ome-model.readthedocs.io/en/stable/developers/screen-plate-well.html
 
 from datetime import datetime, timedelta
 import numpy as np
@@ -20,6 +21,7 @@ class CRXReader:
         if not os.path.isfile(self.experiment_file):
             raise ValueError('Experimenter file not found!')
 
+        self.db = DBReader(self.experiment_file)
         self.verbose = verbose
         self.channel = channel
         self.level = level
@@ -29,56 +31,38 @@ class CRXReader:
         self.imdata = None
 
     def read_experiment_info(self):
-        self.info = {'experiment_file': self.experiment_file, 'images_file': None}
-
+        self.info = {'experiment_file': self.experiment_file, 'image_files': {}}
         self.log('Reading Info from CellReporterXpress experiment.db file')
-        try:
-            filepath = os.path.dirname(self.experiment_file)
-            with sqlite3.connect(self.experiment_file) as conn:
-                conn.row_factory = self.dict_factory
-                cur = conn.cursor()
-                self._fetch_time_series_info(cur, filepath)
-                self._fetch_experiment_metadata(cur)
-                self._fetch_well_info(cur)
-        except sqlite3.Error as e:
-            self.log(f'Error Reading Info: {e}')
-            return None
-
+        self._fetch_time_series_info()
+        self._fetch_experiment_metadata()
+        self._fetch_well_info()
         return self.info
 
-    def _fetch_time_series_info(self, cur, filepath):
-        cur.execute("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase")
-        time_series_ids = sorted([list(row.values())[0] for row in cur.fetchall()])
+    def _fetch_time_series_info(self):
+        time_series_ids = sorted(self.db.fetch_all("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase", return_dicts=False))
         self.info['time_points'] = time_series_ids
 
-        cur.execute("SELECT DISTINCT level FROM SourceImageBase")
-        level_ids = sorted([list(row.values())[0] for row in cur.fetchall()])
+        level_ids = sorted(self.db.fetch_all("SELECT DISTINCT level FROM SourceImageBase", return_dicts=False))
         self.info['levels'] = level_ids
 
-        if len(time_series_ids) == 1 and time_series_ids[0] == 0:
-            self.time_point = 0
-        elif self.time_point not in time_series_ids:
-            raise ValueError(f"Invalid TimePoint: {self.time_point}. Available values: {time_series_ids}")
-        self.info['images_file'] = os.path.join(filepath, f'images-{self.time_point}.db')
+        image_files = {time_series_id: os.path.join(os.path.dirname(self.experiment_file), f'images-{time_series_id}.db')
+                       for time_series_id in time_series_ids}
+        self.info['image_files'] = image_files
 
-    def _fetch_experiment_metadata(self, cur):
-        cur.execute('SELECT DateCreated, Creator, Name FROM ExperimentBase')
-        info = cur.fetchone()
+    def _fetch_experiment_metadata(self):
+        info = self.db.fetch_all('SELECT DateCreated, Creator, Name FROM ExperimentBase')[0]
         info['DateCreated'] = self.convert_dotnet_ticks_to_datetime(int(info['DateCreated']))
         self.info.update(info)
 
-    def _fetch_well_info(self, cur):
-        cur.execute('SELECT SensorSizeYPixels, SensorSizeXPixels, Objective, PixelSizeUm, SensorBitness, SitesX, SitesY FROM AcquisitionExp, AutomaticZonesParametersExp')
-        well_info = cur.fetchone()
-        cur.execute('SELECT Emission, Excitation, Dye, channelNumber, ColorName FROM ImagechannelExp')
-        channel_info = cur.fetchall()
-
-        well_info['channels'] = channel_info
-
+    def _fetch_well_info(self):
+        well_info = self.db.fetch_all('''SELECT SensorSizeYPixels, SensorSizeXPixels, Objective, PixelSizeUm, SensorBitness, SitesX, SitesY
+                                         FROM AcquisitionExp, AutomaticZonesParametersExp''')[0]
         self.info['well_info'] = well_info
 
-        cur.execute('SELECT DISTINCT Name FROM Well')
-        wells = cur.fetchall()
+        channel_info = self.db.fetch_all('SELECT Emission, Excitation, Dye, channelNumber, ColorName FROM ImagechannelExp')
+        self.info['well_info']['channels'] = channel_info
+
+        wells = self.db.fetch_all('SELECT DISTINCT Name FROM Well')
         zone_names = [well['Name'] for well in wells]
         rows = set()
         cols = set()
@@ -87,12 +71,12 @@ class CRXReader:
             rows.add(row)
             cols.add(col)
         well_info['rows'] = sorted(list(rows))
-        well_info['columns'] = sorted(list(cols))
+        well_info['columns'] = sorted(list(cols), key=lambda x: int(x))
 
-        cur.execute('SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1')
-        image_wells = cur.fetchall()
+        image_wells = self.db.fetch_all('SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1')
         self.info['numwells'] = len(image_wells)
-        self.info['wells'] = {well['Name']: well['ZoneIndex'] for well in image_wells}
+        self.info['wells'] = dict(sorted({well['Name']: well['ZoneIndex'] for well in image_wells}.items(),
+                                         key=lambda x: self.split_well_name(x[0], col_as_int=True)))
 
     def _read_well_info(self, well_id):
         well_id = self.remove_leading_zeros(well_id)
@@ -102,16 +86,12 @@ class CRXReader:
             raise ValueError(f"Invalid Well: {well_id}. Available values: {well_ids}")
 
         zone_index = well_ids[well_id]
-        with sqlite3.connect(self.info['experiment_file']) as conn:
-            conn.row_factory = self.dict_factory
-            cur = conn.cursor()
-            cur.execute('''
-                SELECT CoordX, CoordY, SizeX, SizeY, BitsPerPixel, ImageIndex, channelId
-                FROM SourceImageBase
-                WHERE ZoneIndex = ? AND level = ? AND TimeSeriesElementId = ?
-                ORDER BY CoordX ASC, CoordY ASC
-            ''', (zone_index, self.level, self.time_point))
-            well_info = cur.fetchall()
+        well_info = self.db.fetch_all('''
+            SELECT CoordX, CoordY, SizeX, SizeY, BitsPerPixel, ImageIndex, channelId
+            FROM SourceImageBase
+            WHERE ZoneIndex = ? AND level = ? AND TimeSeriesElementId = ?
+            ORDER BY CoordX ASC, CoordY ASC
+        ''', (zone_index, self.level, self.time_point))
 
         # filter channel
         if self.channel is not None:
@@ -127,7 +107,8 @@ class CRXReader:
         nchannels = len(set([info['ChannelId'] for info in well_info]))
         imdata = np.zeros((nchannels, ymax, xmax), dtype=self.dtype)
 
-        with open(self.info['images_file'], 'rb') as fid:
+        image_file = self.info['image_files'][self.time_point]
+        with open(image_file, 'rb') as fid:
             for info in well_info:
                 fid.seek(info['ImageIndex'])
                 coordx, coordy = info['CoordX'], info['CoordY']
@@ -207,10 +188,16 @@ class CRXReader:
         axes = create_axes_metadata(dim_order)
         write_image(image=imdata, group=zarr_group, axes=axes, fmt=ome_format)
 
-    def export_to_zarr(self, filename, zarr_version=2, ome_version='0.4'):
+    def export_to_zarr(self, filename=None, zarr_version=2, ome_version='0.4'):
         # https://ome-zarr.readthedocs.io/en/stable/python.html#writing-hcs-datasets-to-ome-ngff
         if not self.info:
             self.read_experiment_info()
+
+        if filename is None:
+            filename = os.path.basename(os.path.splitext(self.experiment_file)[0])
+            if filename.lower() == 'experiment':
+                filename = os.path.split(os.path.dirname(self.experiment_file))[-1]
+            filename += '.zarr'
 
         if ome_version == '0.5':
             from ome_zarr.format import FormatV05
@@ -223,7 +210,6 @@ class CRXReader:
 
         row_names = self.info['well_info']['rows']
         col_names = self.info['well_info']['columns']
-        # TODO: wells need sorting (by: [row, col])?
         well_paths = ['/'.join(self.split_well_name(info)) for info in self.info['wells']]
         field_paths = ['0']
 
@@ -248,16 +234,18 @@ class CRXReader:
             print(text)
 
     @staticmethod
-    def split_well_name(well_name, remove_leading_zeros=True):
+    def split_well_name(well_name, remove_leading_zeros=True, col_as_int=False):
         matches = re.findall(r'(\D+)(\d+)', well_name)
         if len(matches) > 0:
-            well_name = matches[0]
-            if remove_leading_zeros:
+            row, col = matches[0]
+            if col_as_int or remove_leading_zeros:
                 try:
-                    well_name = well_name[0], str(int(well_name[1]))
+                    col = int(col)
                 except ValueError:
                     pass
-            return well_name
+            if not col_as_int:
+                col = str(col)
+            return row, col
         else:
             raise ValueError(f"Invalid well name format: {well_name}. Expected format like 'A1', 'B2', etc.")
 
@@ -270,12 +258,8 @@ class CRXReader:
 
     @staticmethod
     def remove_leading_zeros(well_name):
-        well_row, well_col = CRXReader.split_well_name(well_name)
-        try:
-            well_col = str(int(well_col))
-        except ValueError:
-            pass
-        return well_row + well_col
+        row, col = CRXReader.split_well_name(well_name, remove_leading_zeros=True)
+        return f'{row}{col}'
 
     @staticmethod
     def convert_dotnet_ticks_to_datetime(net_ticks):
@@ -285,38 +269,54 @@ class CRXReader:
         """
         Displays a matrix of wells used for each timepoint with well names.
         """
-        with sqlite3.connect(self.experiment_file) as conn:
-            cur = conn.cursor()
-            cur.row_factory = self.dict_factory
 
-            # Fetch all TimeSeriesElementId values
-            cur.execute("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase")
-            time_series_ids = [row['TimeSeriesElementId'] for row in cur.fetchall()]
+        # Fetch all TimeSeriesElementId values
+        time_series_ids = self.db.fetch_all("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase", return_dicts=False)
 
-            # Fetch well data
-            cur.execute("SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1")
-            wells = cur.fetchall()
+        # Fetch well data
+        wells = self.db.fetch_all("SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1")
 
-            well_names = [self.add_leading_zero(well['Name']) for well in wells]
-            well_matrix = []
-            for timepoint in time_series_ids:
-                cur.execute("""
-                    SELECT DISTINCT Well.Name FROM SourceImageBase
-                    JOIN Well ON SourceImageBase.ZoneIndex = Well.ZoneIndex
-                    WHERE TimeSeriesElementId = ?
-                """, (timepoint,))
-                wells_at_timepoint = [self.add_leading_zero(row['Name']) for row in cur.fetchall()]
+        well_names = [self.add_leading_zero(well['Name']) for well in wells]
+        well_matrix = []
+        for timepoint in time_series_ids:
+            wells_at_timepoint = self.db.fetch_all("""
+                SELECT DISTINCT Well.Name FROM SourceImageBase
+                JOIN Well ON SourceImageBase.ZoneIndex = Well.ZoneIndex
+                WHERE TimeSeriesElementId = ?
+            """, (timepoint,), return_dicts=False)
 
-                row = [well if well in wells_at_timepoint else '' for well in well_names]
-                well_matrix.append(row)
+            row = [well if well in wells_at_timepoint else '' for well in well_names]
+            well_matrix.append(row)
 
-            print("Timepoint x Well Matrix:")
-            for idx, row in enumerate(well_matrix):
-                print(f"Timepoint {time_series_ids[idx]}: {row}")
+        print("Timepoint x Well Matrix:")
+        for idx, row in enumerate(well_matrix):
+            print(f"Timepoint {time_series_ids[idx]}: {row}")
+
+    def close(self):
+        self.db.close()
+
+
+class DBReader:
+    def __init__(self, db_file):
+        self.conn = sqlite3.connect(db_file)
+        self.conn.row_factory = DBReader.dict_factory
 
     @staticmethod
-    def dict_factory(cur, row):
+    def dict_factory(cursor, row):
         dct = {}
-        for index, column in enumerate(cur.description):
+        for index, column in enumerate(cursor.description):
             dct[column[0]] = row[index]
         return dct
+
+    def fetch_all(self, query, params=(), return_dicts=True):
+        cursor = self.conn.cursor()
+        cursor.execute(query, params)
+        dct = cursor.fetchall()
+        if return_dicts:
+            values = dct
+        else:
+            values = [list(row.values())[0] for row in dct]
+        return values
+
+    def close(self):
+        self.conn.close()
