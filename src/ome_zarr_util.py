@@ -1,3 +1,6 @@
+import numpy as np
+
+
 def create_axes_metadata(dimension_order):
     axes = []
     for dimension in dimension_order:
@@ -17,31 +20,21 @@ def create_axes_metadata(dimension_order):
     return axes
 
 
-def create_transformation_metadata(dimension_order, pixel_size_um, scale, translation_um=[]):
+def create_transformation_metadata(dimension_order, pixel_size_um, scale, translation_um={}):
     metadata = []
     pixel_size_scale = []
     translation_scale = []
     for dimension in dimension_order:
-        if dimension == 'z' and len(pixel_size_um) > 2:
-            pixel_size_scale1 = pixel_size_um[2]
-        elif dimension == 'y' and len(pixel_size_um) > 1:
-            pixel_size_scale1 = pixel_size_um[1] / scale
-        elif dimension == 'x' and len(pixel_size_um) > 0:
-            pixel_size_scale1 = pixel_size_um[0] / scale
-        else:
-            pixel_size_scale1 = 1
+        pixel_size_scale1 = pixel_size_um.get(dimension, 1)
         if pixel_size_scale1 == 0:
             pixel_size_scale1 = 1
+        if dimension in ['x', 'y']:
+            pixel_size_scale1 /= scale
         pixel_size_scale.append(pixel_size_scale1)
 
-        if dimension == 'z' and len(translation_um) > 2:
-            translation1 = translation_um[2]
-        elif dimension == 'y' and len(translation_um) > 1:
-            translation1 = translation_um[1] * scale
-        elif dimension == 'x' and len(translation_um) > 0:
-            translation1 = translation_um[0] * scale
-        else:
-            translation1 = 0
+        translation1 = translation_um.get(dimension, 0)
+        if dimension in ['x', 'y']:
+            translation1 *= scale
         translation_scale.append(translation1)
 
     metadata.append({'type': 'scale', 'scale': pixel_size_scale})
@@ -50,19 +43,24 @@ def create_transformation_metadata(dimension_order, pixel_size_um, scale, transl
     return metadata
 
 
-def create_channel_metadata(imdata, channels, nchannels, ome_version):
+def create_channel_metadata(dtype, channels, nchannels, ome_version):
     if len(channels) < nchannels == 3:
         labels = ['Red', 'Green', 'Blue']
-        colors = [(1, 0, 0, 1), (0, 1, 0, 1), (0, 0, 1, 1)]
+        colors = ["FF0000", "00FF00", "0000FF"]
         channels = [{'label': label, 'color': color} for label, color in zip(labels, colors)]
 
     omezarr_channels = []
     for channeli, channel0 in enumerate(channels):
-        channel = channel0.copy()
-        color = channel.get('color', (1, 1, 1, 1))
-        channel['color'] = color
-        if 'window' not in channel:
-            channel['window'] = get_channel_window(imdata, channeli)
+        channel = {'label': channel0.get('label', channel0.get('Dye')),
+                   'color': channel0.get('color', channel0.get('Color'))}
+        if np.dtype(dtype).kind == 'f':
+            # info = np.finfo(dtype)
+            start, end = 0, 1
+        else:
+            info = np.iinfo(dtype)
+            start, end = info.min, info.max
+        min, max = start, end
+        channel['window'] = {'start': start, 'end': end, 'min': min, 'max': max}
         omezarr_channels.append(channel)
 
     metadata = {

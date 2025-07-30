@@ -25,7 +25,9 @@ def print_dict(items, tab=0):
 
 
 if __name__ == '__main__':
-    filename = 'D:/slides/DB/TestData1/experiment.db'
+    #filename = 'D:/slides/DB/2ChannelPlusTL/experiment.db'
+    #filename = 'D:/slides/DB/PicoData16ProcCoverag/experiment.db'
+    filename = 'D:/slides/DB/241209 - TC1 TC9 test MSP MUB/experiment.db'
     output_filename = 'D:/slides/DB/test.zarr'
 
     init_logging('db_to_zarr.log')

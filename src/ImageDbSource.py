@@ -2,14 +2,13 @@
 # which is based on https://github.com/Cellular-Imaging-Amsterdam-UMC/crxReader
 # Screen Plate Well (SPW) - High Content Screening (HCS) https://ome-model.readthedocs.io/en/stable/developers/screen-plate-well.html
 
-from datetime import datetime, timedelta
 import logging
 import numpy as np
 import os
 import sqlite3
 
 from src.ImageSource import ImageSource
-from src.util import split_well_name
+from src.util import *
 
 
 class ImageDbSource(ImageSource):
@@ -17,6 +16,7 @@ class ImageDbSource(ImageSource):
         super().__init__(uri, metadata)
         self.db = DBReader(self.uri)
         self.data = None
+        self.metadata['dim_order'] = 'tczyx'
 
     def read_experiment_info(self):
         logging.info('Reading Info from CellReporterXpress experiment.db file')
@@ -39,13 +39,13 @@ class ImageDbSource(ImageSource):
 
     def _get_experiment_metadata(self):
         creation_info = self.db.fetch_all('SELECT DateCreated, Creator, Name FROM ExperimentBase')[0]
-        creation_info['DateCreated'] = self.convert_dotnet_ticks_to_datetime(creation_info['DateCreated'])
+        creation_info['DateCreated'] = convert_dotnet_ticks_to_datetime(creation_info['DateCreated'])
         self.metadata.update(creation_info)
 
         acquisitions = self.db.fetch_all('SELECT Name, Description, DateCreated, DateModified FROM AcquisitionExp')
         for acquisition in acquisitions:
-            acquisition['DateCreated'] = self.convert_dotnet_ticks_to_datetime(acquisition['DateCreated'])
-            acquisition['DateModified'] = self.convert_dotnet_ticks_to_datetime(acquisition['DateModified'])
+            acquisition['DateCreated'] = convert_dotnet_ticks_to_datetime(acquisition['DateCreated'])
+            acquisition['DateModified'] = convert_dotnet_ticks_to_datetime(acquisition['DateModified'])
         self.metadata['acquisitions'] = acquisitions
 
     def _get_well_info(self):
@@ -53,9 +53,13 @@ class ImageDbSource(ImageSource):
             SELECT SensorSizeYPixels, SensorSizeXPixels, Objective, PixelSizeUm, SensorBitness, SitesX, SitesY
             FROM AcquisitionExp, AutomaticZonesParametersExp
         ''')[0]
-        self.metadata['well_info'] = well_info
 
-        channel_infos = self.db.fetch_all('SELECT Emission, Excitation, Dye, ChannelNumber, Color FROM ImagechannelExp')
+        # Filter multiple duplicate channel entries
+        channel_infos = self.db.fetch_all('''
+            SELECT DISTINCT ChannelNumber, Emission, Excitation, Dye, Color
+            FROM ImagechannelExp
+            ORDER BY ChannelNumber
+        ''')
         for channel_info in channel_infos:
             channel_info['Color'] = channel_info['Color'][1:]   # remove leading '#'
         self.metadata['channels'] = channel_infos
@@ -70,142 +74,159 @@ class ImageDbSource(ImageSource):
             cols.add(col)
         well_info['rows'] = sorted(list(rows))
         well_info['columns'] = sorted(list(cols), key=lambda x: int(x))
-        num_fields = well_info['SitesX'] * well_info['SitesY']
-        well_info['fields'] = [f'{field_index}' for field_index in range(num_fields)]
-        well_info['num_fields'] = num_fields
+        num_sites = well_info['SitesX'] * well_info['SitesY']
+        well_info['num_sites'] = num_sites
+        well_info['fields'] = [f'{site_index}' for site_index in range(num_sites)]
 
-        image_wells = self.db.fetch_all('SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1')
+        image_wells = self.db.fetch_all('SELECT Name, ZoneIndex, CoordX, CoordY FROM Well WHERE HasImages = 1')
         self.metadata['num_wells'] = len(image_wells)
-        self.metadata['wells'] = dict(sorted({well['Name']: well['ZoneIndex'] for well in image_wells}.items(),
+        self.metadata['wells'] = dict(sorted({well['Name']: well for well in image_wells}.items(),
                                              key=lambda x: split_well_name(x[0], col_as_int=True)))
+
+        xmax, ymax = 0, 0
+        for well_id in self.metadata['wells']:
+            well_data = self._read_well_info(well_id)
+            xmax = max(xmax, np.max([info['CoordX'] + info['SizeX'] for info in well_data]))
+            ymax = max(ymax, np.max([info['CoordY'] + info['SizeY'] for info in well_data]))
+        pixel_size = well_info.get('PixelSizeUm', 1)
+        well_info['max_sizex_um'] = xmax * pixel_size
+        well_info['max_sizey_um'] = ymax * pixel_size
+
+        self.metadata['well_info'] = well_info
 
     def _get_image_info(self):
         bits_per_pixel = self.db.fetch_all("SELECT DISTINCT BitsPerPixel FROM SourceImageBase", return_dicts=False)[0]
         self.metadata['bits_per_pixel'] = bits_per_pixel
         bits_per_pixel = int(np.ceil(bits_per_pixel / 8)) * 8
+        if bits_per_pixel == 24:
+            bits_per_pixel = 32
         self.metadata['dtype'] = np.dtype(f'uint{bits_per_pixel}').type
 
-    def _read_well_info(self, well_id, channel=None, time_point=0, level=0):
-        well_id = self.remove_leading_zeros(well_id)
+    def _read_well_info(self, well_id, channel=None, time_point=None, level=0):
+        well_id = remove_leading_zeros(well_id)
         well_ids = self.metadata.get('wells', {})
 
         if well_id not in well_ids:
             raise ValueError(f"Invalid Well: {well_id}. Available values: {well_ids}")
 
-        zone_index = well_ids[well_id]
+        zone_index = well_ids[well_id]['ZoneIndex']
         well_info = self.db.fetch_all('''
-            SELECT CoordX, CoordY, SizeX, SizeY, BitsPerPixel, ImageIndex, channelId
+            SELECT *
             FROM SourceImageBase
-            WHERE ZoneIndex = ? AND level = ? AND TimeSeriesElementId = ?
+            WHERE ZoneIndex = ? AND level = ?
             ORDER BY CoordX ASC, CoordY ASC
-        ''', (zone_index, level, time_point))
+        ''', (zone_index, level))
 
-        # filter channel
         if channel is not None:
-            well_info = [info for info in well_info if info['ChannelId'] == channel]
+             well_info = [info for info in well_info if info['ChannelId'] == channel]
+        if time_point is not None:
+             well_info = [info for info in well_info if info['TimeSeriesElementId'] == time_point]
         if not well_info:
             logging.info(f'Error: No data found for well {well_id}')
         return well_info
 
-    def _assemble_image_data(self, well_info, time_point=0):
+    def _assemble_image_data(self, well_info):
         dtype = self.metadata['dtype']
         well_info = np.asarray(well_info)
         xmax = np.max([info['CoordX'] + info['SizeX'] for info in well_info])
         ymax = np.max([info['CoordY'] + info['SizeY'] for info in well_info])
-        nchannels = len(set([info['ChannelId'] for info in well_info]))
-        data = np.zeros((nchannels, ymax, xmax), dtype=dtype)
+        zmax = np.max([info.get('CoordZ', 0) + info.get('SizeZ', 1) for info in well_info])
+        nc = len(set([info['ChannelId'] for info in well_info]))
+        nt = len(self.metadata['time_points'])
+        data = np.zeros((nt, nc, zmax, ymax, xmax), dtype=dtype)
 
-        image_file = self.metadata['image_files'][time_point]
-        with open(image_file, 'rb') as fid:
-            for info in well_info:
-                fid.seek(info['ImageIndex'])
-                coordx, coordy = info['CoordX'], info['CoordY']
-                sizex, sizey = info['SizeX'], info['SizeY']
-                channeli = info['ChannelId']
-                subtile_data = np.fromfile(fid, dtype=dtype, count=sizey * sizex)
-                subtile_data = subtile_data.reshape((sizey, sizex))
-                data[channeli, coordy:coordy + sizey, coordx:coordx + sizex] = subtile_data
+        for timei, time_id in enumerate(self.metadata['time_points']):
+            image_file = self.metadata['image_files'][time_id]
+            with open(image_file, 'rb') as fid:
+                for info in well_info:
+                    if info['TimeSeriesElementId'] == time_id:
+                        fid.seek(info['ImageIndex'])
+                        coordx, coordy, coordz = info['CoordX'], info['CoordY'], info.get('CoordZ', 0)
+                        sizex, sizey, sizez = info['SizeX'], info['SizeY'], info.get('SizeZ', 1)
+                        channeli = info['ChannelId']
+                        tile = np.fromfile(fid, dtype=dtype, count=sizez * sizey * sizex)
+                        data[timei, channeli, coordz:coordz + sizez, coordy:coordy + sizey, coordx:coordx + sizex] = tile.reshape((sizez, sizey, sizex))
 
         self.data = data
 
-    def _extract_field(self, field_id=None):
+    def _extract_site(self, site_id=None):
         well_info = self.metadata['well_info']
-        fieldx = well_info['SitesX']
-        fieldy = well_info['SitesY']
-        numfields = well_info['num_fields']
+        sitesx = well_info['SitesX']
+        sitesy = well_info['SitesY']
+        sitesz = well_info.get('SitesZ', 1)
+        numsites = well_info['num_sites']
         sizex = well_info['SensorSizeXPixels']
         sizey = well_info['SensorSizeYPixels']
+        sizez = well_info.get('SensorSizeZPixels', 1)
 
-        if field_id is None:
+        if site_id is None:
             # Return full image data
             return self.data
-        if field_id < 0:
+        if site_id < 0:
             # Return list of all fields
-            fields = []
-            for yi in range(fieldy):
-                for xi in range(fieldx):
-                    startx = xi * sizex
-                    starty = yi * sizey
-                    fields.append(self.data[:, starty:starty + sizey, startx:startx + sizex])
-            return fields
-        elif 0 <= field_id < numfields:
-            # Return specific field
-            xi = field_id % fieldx
-            yi = field_id // fieldx
+            data = []
+            for zi in range(sitesz):
+                for yi in range(sitesy):
+                    for xi in range(sitesx):
+                        startx = xi * sizex
+                        starty = yi * sizey
+                        startz = zi * sizez
+                        data.append(self.data[..., startz:startz + sizez, starty:starty + sizey, startx:startx + sizex])
+            return data
+        elif 0 <= site_id < numsites:
+            # Return specific site
+            xi = site_id % sitesx
+            yi = (site_id // sitesx) % sitesy
+            zi = site_id // sitesx // sitesy
             startx = xi * sizex
             starty = yi * sizey
-            return self.data[:, starty:starty + sizey, startx:startx + sizex]
+            startz = zi * sizez
+            return self.data[..., startz:startz + sizez, starty:starty + sizey, startx:startx + sizex]
         else:
-            raise ValueError(f"Invalid field: {field_id}")
+            raise ValueError(f"Invalid site: {site_id}")
 
-    def get_field_image(self, well_id, field_id):
-        well_info = self._read_well_info(well_id)
-        if self.data is None:
-            self._assemble_image_data(well_info)
-        return self._extract_field(field_id).squeeze()
+    def select_well(self, well_id):
+        well_data = self._read_well_info(well_id)
+        self._assemble_image_data(well_data)
 
-    @staticmethod
-    def add_leading_zero(input_string, num_digits=2):
-        output = str(input_string)
-        while len(output) < num_digits:
-            output = '0' + output
-        return output
+    def get_image(self, field_id):
+        return self._extract_site(field_id)
 
-    @staticmethod
-    def remove_leading_zeros(well_name):
-        row, col = split_well_name(well_name, remove_leading_zeros=True)
-        return f'{row}{col}'
+    def get_pixel_size_um(self):
+        pixel_size = self.metadata['well_info'].get('PixelSizeUm', 1)
+        return {'x': pixel_size, 'y': pixel_size}
 
-    @staticmethod
-    def convert_dotnet_ticks_to_datetime(net_ticks):
-        return datetime(1, 1, 1) + timedelta(microseconds=net_ticks // 10)
+    def get_well_coords_um(self, well_id):
+        well = self.metadata['wells'][well_id]
+        well_info = self.metadata['well_info']
+        x = well.get('CoordX', 0) * well_info['max_sizex_um']
+        y = well.get('CoordY', 0) * well_info['max_sizey_um']
+        return {'x': x, 'y': y}
 
     def display_well_matrix(self):
         """
         Displays a matrix of wells used for each timepoint with well names.
         """
 
-        # Fetch all TimeSeriesElementId values
-        time_series_ids = self.db.fetch_all("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase", return_dicts=False)
+        time_points = self.metadata['time_points']
 
-        # Fetch well data
-        wells = self.db.fetch_all("SELECT Name, ZoneIndex FROM Well WHERE HasImages = 1")
+        well_names = [add_leading_zero(well) for well in self.metadata['wells']]
 
-        well_names = [self.add_leading_zero(well['Name']) for well in wells]
         well_matrix = []
-        for timepoint in time_series_ids:
+        for timepoint in time_points:
             wells_at_timepoint = self.db.fetch_all("""
                 SELECT DISTINCT Well.Name FROM SourceImageBase
                 JOIN Well ON SourceImageBase.ZoneIndex = Well.ZoneIndex
                 WHERE TimeSeriesElementId = ?
             """, (timepoint,), return_dicts=False)
 
-            row = [well if well in wells_at_timepoint else '' for well in well_names]
+            row = ['+  ' if well in wells_at_timepoint else '   ' for well in well_names]
             well_matrix.append(row)
 
-        print("Timepoint x Well Matrix:")
+        header = ' '.join([str(well) for well in well_names])
+        print('Timepoint ' + header)
         for idx, row in enumerate(well_matrix):
-            print(f"Timepoint {time_series_ids[idx]}: {row}")
+            print(f"        {time_points[idx]} " + ''.join(row))
 
     def close(self):
         self.db.close()
