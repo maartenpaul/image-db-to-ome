@@ -1,5 +1,17 @@
-#from crxReaderTime import crxreader
-from CRXReader import CRXReader
+import logging
+import os
+
+from src.ImageDbSource import ImageDbSource
+from src.OmeZarrWriter import OmeZarrWriter
+
+
+def init_logging(log_filename):
+    basepath = os.path.dirname(log_filename)
+    if basepath and not os.path.exists(basepath):
+        os.makedirs(basepath)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s',
+                        handlers=[logging.StreamHandler(), logging.FileHandler(log_filename, encoding='utf-8')],
+                        encoding='utf-8')
 
 
 def print_dict(items, tab=0):
@@ -13,15 +25,14 @@ def print_dict(items, tab=0):
 
 
 if __name__ == '__main__':
-    filename = 'data/TestData1/experiment.db'
-    output_filename = 'test.zarr'
+    filename = 'D:/slides/DB/TestData1/experiment.db'
+    output_filename = 'D:/slides/DB/test.zarr'
 
-    #info = crxreader(filename, verbose=True)
-    #im = crxreader(filename, well='B2', tile=1, save_as=output_filename, info=info)
+    init_logging('db_to_zarr.log')
 
-    crx = CRXReader(filename, verbose=True)
-    print_dict(crx.read_experiment_info())
-    crx.display_well_matrix()
-    #crx.extract_data(output_filename, well_id='B1', tile_id=0)
-    crx.export_to_zarr()
-    crx.close()
+    writer = OmeZarrWriter()
+    source = ImageDbSource(filename)
+    print_dict(source.read_experiment_info())
+    source.display_well_matrix()
+    writer.write(output_filename, source)
+    source.close()
