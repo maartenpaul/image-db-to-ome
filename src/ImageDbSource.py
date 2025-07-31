@@ -26,11 +26,9 @@ class ImageDbSource(ImageSource):
     def _get_time_series_info(self):
         time_series_ids = sorted(self.db.fetch_all('SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase', return_dicts=False))
         self.metadata['time_points'] = time_series_ids
-        self.metadata['num_time_points'] = len(time_series_ids)
 
         level_ids = sorted(self.db.fetch_all('SELECT DISTINCT level FROM SourceImageBase', return_dicts=False))
         self.metadata['levels'] = level_ids
-        self.metadata['num_levels'] = len(level_ids)
 
         image_files = {time_series_id: os.path.join(os.path.dirname(self.uri), f'images-{time_series_id}.db')
                        for time_series_id in time_series_ids}
@@ -101,13 +99,10 @@ class ImageDbSource(ImageSource):
             bits_per_pixel = 32
         self.metadata['dtype'] = np.dtype(f'uint{bits_per_pixel}')
 
-        image_info = self.db.fetch_all('''
-            SELECT *
-            FROM SourceImageBase
-            WHERE level = 0
-            ORDER BY CoordX ASC, CoordY ASC
-        ''')
-        max_data_size = np.sum([info['SizeX'] * info['SizeY'] * info.get('SizeZ', 1) for info in image_info]) * bits_per_pixel // 8
+        well_info = self.metadata['well_info']
+        max_data_size = (well_info['SensorSizeXPixels'] * well_info['SensorSizeYPixels'] *
+                         len(self.metadata['wells']) * well_info['num_sites'] * self.metadata['num_channels'] *
+                         bits_per_pixel // 8)
         self.metadata['max_data_size'] = max_data_size
 
     def _read_well_info(self, well_id, channel=None, time_point=None, level=0):
@@ -258,12 +253,11 @@ class ImageDbSource(ImageSource):
     def get_total_data_size(self):
         return self.metadata['max_data_size']
 
-    def print_well_matrix(self):
+    def print_timepoint_well_matrix(self):
         s = ''
 
         time_points = self.metadata['time_points']
-
-        well_names = [add_leading_zero(well) for well in self.metadata['wells']]
+        wells = [add_leading_zero(well) for well in self.metadata['wells']]
 
         well_matrix = []
         for timepoint in time_points:
@@ -273,13 +267,34 @@ class ImageDbSource(ImageSource):
                 WHERE TimeSeriesElementId = ?
             ''', (timepoint,), return_dicts=False)
 
-            row = ['+  ' if well in wells_at_timepoint else '   ' for well in well_names]
+            row = ['+' if well in wells_at_timepoint else ' ' for well in wells]
             well_matrix.append(row)
 
-        header = ' '.join([str(well) for well in well_names])
+        header = ' '.join([str(well) for well in wells])
         s += 'Timepoint ' + header + '\n'
         for idx, row in enumerate(well_matrix):
-            s += f'        {time_points[idx]} ' + ''.join(row) + '\n'
+            s += f'{time_points[idx]:9}  ' + '  '.join(row) + '\n'
+        return s
+
+    def print_well_matrix(self):
+        s = ''
+
+        well_info = self.metadata['well_info']
+        rows, cols = well_info['rows'], well_info['columns']
+        used_wells = [add_leading_zero(well) for well in self.metadata['wells']]
+
+        well_matrix = []
+        for row_id in rows:
+            row = ''
+            for col_id in cols:
+                well_id = f'{row_id}{col_id}'
+                row += '+' if well_id in used_wells else ' '
+            well_matrix.append(row)
+
+        header = ' '.join([add_leading_zero(col) for col in cols])
+        s += ' ' + header + '\n'
+        for idx, row in enumerate(well_matrix):
+            s += f'{rows[idx]} ' + '  '.join(row) + '\n'
         return s
 
     def close(self):

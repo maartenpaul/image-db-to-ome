@@ -54,8 +54,10 @@ def convert(input_filename, output_folder, alt_output_folder=None,
     metadata = source.init_metadata()
     if verbose:
         print(print_dict(metadata))
+        print()
         print(source.print_well_matrix())
-        print(f'Total data size {print_hbytes(source.get_total_data_size())}')
+        print(source.print_timepoint_well_matrix())
+        print(f'Total data size:    {print_hbytes(source.get_total_data_size())}')
     writer.write(output_path, source)
     source.close()
 
@@ -82,12 +84,13 @@ def convert(input_filename, output_folder, alt_output_folder=None,
 if __name__ == '__main__':
     basedir = 'C:/Project/slides/DB/'
     #basedir = 'D:/slides/DB/'
-    filename = basedir + '2ChannelPlusTL/experiment.db'
-    #filename = basedir + '2ChannelPlusTL/experiment.db'
-    #filename = basedir + 'PicoData16ProcCoverag/experiment.db'
-    #filename = basedir + '241209 - TC1 TC9 test MSP MUB/experiment.db'
+
+    #filename = 'TestData2'
+    filename = '2ChannelPlusTL'
+    #filename = 'PicoData16ProcCoverag'
+    #filename = '241209 - TC1 TC9 test MSP MUB'
 
     output_folder = basedir
 
     init_logging('db_to_zarr.log')
-    convert(filename, output_folder, show_progress=True, verbose=True)
+    convert(basedir + filename + '/experiment.db', output_folder, show_progress=True, verbose=True)

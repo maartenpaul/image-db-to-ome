@@ -68,6 +68,6 @@ class OmeZarrWriter(OmeWriter):
                 total_size += data.size * dtype.itemsize
 
         if self.verbose:
-            print(f'Total written: {print_hbytes(total_size)}')
+            print(f'Total data written: {print_hbytes(total_size)}')
 
         zarr_root.attrs['omero'] = create_channel_metadata(dtype, channels, nchannels, self.ome_version)
