@@ -19,7 +19,6 @@ class ImageDbSource(ImageSource):
         self.metadata['dim_order'] = 'tczyx'
 
     def read_experiment_info(self):
-        logging.info('Reading Info from CellReporterXpress experiment.db file')
         self._get_time_series_info()
         self._get_experiment_metadata()
         self._get_well_info()
@@ -27,10 +26,10 @@ class ImageDbSource(ImageSource):
         return self.metadata
 
     def _get_time_series_info(self):
-        time_series_ids = sorted(self.db.fetch_all("SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase", return_dicts=False))
+        time_series_ids = sorted(self.db.fetch_all('SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase', return_dicts=False))
         self.metadata['time_points'] = time_series_ids
 
-        level_ids = sorted(self.db.fetch_all("SELECT DISTINCT level FROM SourceImageBase", return_dicts=False))
+        level_ids = sorted(self.db.fetch_all('SELECT DISTINCT level FROM SourceImageBase', return_dicts=False))
         self.metadata['levels'] = level_ids
 
         image_files = {time_series_id: os.path.join(os.path.dirname(self.uri), f'images-{time_series_id}.db')
@@ -95,7 +94,7 @@ class ImageDbSource(ImageSource):
         self.metadata['well_info'] = well_info
 
     def _get_image_info(self):
-        bits_per_pixel = self.db.fetch_all("SELECT DISTINCT BitsPerPixel FROM SourceImageBase", return_dicts=False)[0]
+        bits_per_pixel = self.db.fetch_all('SELECT DISTINCT BitsPerPixel FROM SourceImageBase', return_dicts=False)[0]
         self.metadata['bits_per_pixel'] = bits_per_pixel
         bits_per_pixel = int(np.ceil(bits_per_pixel / 8)) * 8
         if bits_per_pixel == 24:
@@ -107,7 +106,7 @@ class ImageDbSource(ImageSource):
         well_ids = self.metadata.get('wells', {})
 
         if well_id not in well_ids:
-            raise ValueError(f"Invalid Well: {well_id}. Available values: {well_ids}")
+            raise ValueError(f'Invalid Well: {well_id}. Available values: {well_ids}')
 
         zone_index = well_ids[well_id]['ZoneIndex']
         well_info = self.db.fetch_all('''
@@ -122,7 +121,7 @@ class ImageDbSource(ImageSource):
         if time_point is not None:
              well_info = [info for info in well_info if info['TimeSeriesElementId'] == time_point]
         if not well_info:
-            logging.info(f'Error: No data found for well {well_id}')
+            raise ValueError(f'No data found for well {well_id}')
         return well_info
 
     def _assemble_image_data(self, well_info):
@@ -183,7 +182,7 @@ class ImageDbSource(ImageSource):
             startz = zi * sizez
             return self.data[..., startz:startz + sizez, starty:starty + sizey, startx:startx + sizex]
         else:
-            raise ValueError(f"Invalid site: {site_id}")
+            raise ValueError(f'Invalid site: {site_id}')
 
     def select_well(self, well_id):
         well_data = self._read_well_info(well_id)
@@ -204,9 +203,7 @@ class ImageDbSource(ImageSource):
         return {'x': x, 'y': y}
 
     def display_well_matrix(self):
-        """
-        Displays a matrix of wells used for each timepoint with well names.
-        """
+        s = ''
 
         time_points = self.metadata['time_points']
 
@@ -214,19 +211,20 @@ class ImageDbSource(ImageSource):
 
         well_matrix = []
         for timepoint in time_points:
-            wells_at_timepoint = self.db.fetch_all("""
+            wells_at_timepoint = self.db.fetch_all('''
                 SELECT DISTINCT Well.Name FROM SourceImageBase
                 JOIN Well ON SourceImageBase.ZoneIndex = Well.ZoneIndex
                 WHERE TimeSeriesElementId = ?
-            """, (timepoint,), return_dicts=False)
+            ''', (timepoint,), return_dicts=False)
 
             row = ['+  ' if well in wells_at_timepoint else '   ' for well in well_names]
             well_matrix.append(row)
 
         header = ' '.join([str(well) for well in well_names])
-        print('Timepoint ' + header)
+        s += 'Timepoint ' + header + '\n'
         for idx, row in enumerate(well_matrix):
-            print(f"        {time_points[idx]} " + ''.join(row))
+            s += f'        {time_points[idx]} ' + ''.join(row) + '\n'
+        return s
 
     def close(self):
         self.db.close()

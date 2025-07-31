@@ -1,5 +1,22 @@
 from datetime import datetime, timedelta
+import os
 import re
+
+
+def splitall(path):
+    allparts = []
+    while True:
+        parts = os.path.split(path)
+        if parts[0] == path:  # sentinel for absolute paths
+            allparts.insert(0, parts[0])
+            break
+        elif parts[1] == path: # sentinel for relative paths
+            allparts.insert(0, parts[1])
+            break
+        else:
+            path = parts[0]
+            allparts.insert(0, parts[1])
+    return allparts
 
 
 def split_well_name(well_name, remove_leading_zeros=True, col_as_int=False):
@@ -43,3 +60,26 @@ def convert_to_um(value, unit):
         'm': 1e6, 'meter': 1e6
     }
     return value * conversions.get(unit, 1)
+
+
+def print_dict(value, tab=0, bullet=False):
+    s = ''
+    if isinstance(value, dict):
+        for key, subvalue in value.items():
+            s += '\n'
+            if bullet:
+                s += '\t' * (tab - 1) + '-   '
+                bullet = False
+            else:
+                s += '\t' * tab
+            s += str(key) + ': '
+            if isinstance(subvalue, dict):
+                s += print_dict(subvalue, tab+1)
+            elif isinstance(subvalue, list):
+                for v in subvalue:
+                    s += print_dict(v, tab+1, bullet=True)
+            else:
+                s += str(subvalue)
+    else:
+        s += str(value) + ' '
+    return s

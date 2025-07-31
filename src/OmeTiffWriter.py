@@ -13,10 +13,10 @@ class OmeTiffWriter(OmeWriter):
         filepath, filename = os.path.split(filename)
         filetitle, ext = os.path.splitext(filename)
 
-        filename = f"{filetitle}"
-        filename += f"_{add_leading_zero(well_id)}"
+        filename = f'{filetitle}'
+        filename += f'_{add_leading_zero(well_id)}'
         if field_id is not None and field_id >= 0:
-            filename += f"_{add_leading_zero(field_id)}"
+            filename += f'_{add_leading_zero(field_id)}'
 
         filename = os.path.join(filepath, filename + ext)
 
@@ -27,4 +27,4 @@ class OmeTiffWriter(OmeWriter):
             with tifffile.TiffWriter(filename) as tif:
                 tif.write(data, compression=tiff_compression, dtype=source.metadata['dtype'])
 
-        logging.info(f"Image saved as {filename}")
+        logging.info(f'Image saved as {filename}')

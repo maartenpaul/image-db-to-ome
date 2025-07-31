@@ -1,7 +1,5 @@
 from abc import ABC
 
-from src.util import convert_to_um
-
 
 class ImageSource(ABC):
     def __init__(self, uri, metadata={}):
