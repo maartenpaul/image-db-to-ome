@@ -49,6 +49,7 @@ def convert(input_filename, output_folder, alt_output_folder=None,
     if show_progress:
         print(f'Converting {input_filename} to {output_path}')
 
+    logging.info(f'Importing {input_filename}')
     source = ImageDbSource(input_filename)
     info = source.read_experiment_info()
     if verbose:
@@ -57,7 +58,7 @@ def convert(input_filename, output_folder, alt_output_folder=None,
     writer.write(output_path, source)
     source.close()
 
-    message = f'Exported as {output_path}'
+    message = f'Exported  {output_path}'
     result = {'name': output_filename, 'full_path': output_path}
     if alt_output_folder:
         if not os.path.exists(alt_output_folder):
