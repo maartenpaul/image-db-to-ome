@@ -1,14 +1,13 @@
 # https://ome-zarr.readthedocs.io/en/stable/python.html#writing-hcs-datasets-to-ome-ngff
 
-import logging
 from ome_zarr.io import parse_url
 from ome_zarr.scale import Scaler
 from ome_zarr.writer import write_plate_metadata, write_well_metadata, write_image
 import zarr
 
-from src.ImageSource import ImageSource
 from src.OmeWriter import OmeWriter
 from src.ome_zarr_util import *
+from src.parameters import VERSION
 from src.util import split_well_name, print_hbytes
 
 
@@ -25,7 +24,7 @@ class OmeZarrWriter(OmeWriter):
             self.ome_format = FormatV04()
         self.verbose = verbose
 
-    def write(self, filename, source: ImageSource, **kwargs):
+    def write(self, filename, source, name=None, **kwargs):
         zarr_root = zarr.open_group(store=parse_url(filename, mode='w').store, mode='w', zarr_version=self.zarr_version)
 
         dtype = source.get_dtype()
@@ -41,7 +40,8 @@ class OmeZarrWriter(OmeWriter):
         axes = create_axes_metadata(source.get_dim_order())
         acquisitions = source.get_acquisitions()
 
-        write_plate_metadata(zarr_root, row_names, col_names, well_paths, acquisitions=acquisitions,
+        write_plate_metadata(zarr_root, row_names, col_names, well_paths,
+                             name=name, field_count=len(field_paths), acquisitions=acquisitions,
                              fmt=self.ome_format)
         total_size = 0
         for well_id in wells:
@@ -71,3 +71,4 @@ class OmeZarrWriter(OmeWriter):
             print(f'Total data written: {print_hbytes(total_size)}')
 
         zarr_root.attrs['omero'] = create_channel_metadata(dtype, channels, nchannels, self.ome_version)
+        zarr_root.attrs['_creator'] = {'name': 'OmeZarrWriter', 'version': VERSION}

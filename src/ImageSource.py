@@ -15,6 +15,9 @@ class ImageSource(ABC):
     def get_image(self, field_id):
         raise NotImplementedError("The 'get_image' method must be implemented by subclasses.")
 
+    def get_name(self):
+        raise NotImplementedError("The 'get_name' method must be implemented by subclasses.")
+
     def get_dim_order(self):
         raise NotImplementedError("The 'get_dim_order' method must be implemented by subclasses.")
 

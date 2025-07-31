@@ -35,14 +35,20 @@ def split_well_name(well_name, remove_leading_zeros=True, col_as_int=False):
         raise ValueError(f"Invalid well name format: {well_name}. Expected format like 'A1', 'B2', etc.")
 
 
-def add_leading_zero(input_string, num_digits=2):
+def pad_leading_zero(input_string, num_digits=2):
     output = str(input_string)
+    is_well = not output[0].isdigit()
+    if is_well:
+        row, col = split_well_name(output, remove_leading_zeros=True)
+        output = str(col)
     while len(output) < num_digits:
         output = '0' + output
+    if is_well:
+        output = row + output
     return output
 
 
-def remove_leading_zeros(well_name):
+def strip_leading_zeros(well_name):
     row, col = split_well_name(well_name, remove_leading_zeros=True)
     return f'{row}{col}'
 
@@ -89,7 +95,6 @@ def print_hbytes(nbytes):
     exps = ['', 'K', 'M', 'G', 'T', 'P', 'E']
     div = 1024
     exp = 0
-
     while nbytes > div:
         nbytes /= div
         exp += 1

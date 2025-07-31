@@ -58,7 +58,10 @@ def convert(input_filename, output_folder, alt_output_folder=None,
         print(source.print_well_matrix())
         print(source.print_timepoint_well_matrix())
         print(f'Total data size:    {print_hbytes(source.get_total_data_size())}')
-    writer.write(output_path, source)
+    name = source.get_name()
+    if not name:
+        name = output_filename
+    writer.write(output_path, source, name=name)
     source.close()
 
     message = f'Exported  {output_path}'
@@ -85,10 +88,12 @@ if __name__ == '__main__':
     basedir = 'C:/Project/slides/DB/'
     #basedir = 'D:/slides/DB/'
 
-    #filename = 'TestData2'
-    filename = '2ChannelPlusTL'
+    filename = 'TestData1'
+    #filename = '2ChannelPlusTL'
     #filename = 'PicoData16ProcCoverag'
     #filename = '241209 - TC1 TC9 test MSP MUB'
+    #filename = '20220714_TKI_482'
+    #filename = 'Cells'
 
     output_folder = basedir
 

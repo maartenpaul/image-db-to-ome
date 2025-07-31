@@ -1,4 +1,4 @@
-# TODO: requires proper implementation
+# TODO: requires proper implementation including ome xml metadata
 
 import logging
 import os
@@ -13,14 +13,14 @@ class OmeTiffWriter(OmeWriter):
         super().__init__()
         self.verbose = verbose
 
-    def write(self, filename, source, well_id=None, field_id=None, tiff_compression=None):
+    def write(self, filename, source, name=None, well_id=None, field_id=None, tiff_compression=None):
         filepath, filename = os.path.split(filename)
         filetitle, ext = os.path.splitext(filename)
 
         filename = f'{filetitle}'
-        filename += f'_{add_leading_zero(well_id)}'
+        filename += f'_{pad_leading_zero(well_id)}'
         if field_id is not None and field_id >= 0:
-            filename += f'_{add_leading_zero(field_id)}'
+            filename += f'_{pad_leading_zero(field_id)}'
 
         filename = os.path.join(filepath, filename + ext)
 
