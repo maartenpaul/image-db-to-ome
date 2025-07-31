@@ -83,3 +83,18 @@ def print_dict(value, tab=0, bullet=False):
     else:
         s += str(value) + ' '
     return s
+
+
+def print_hbytes(nbytes):
+    exps = ['', 'K', 'M', 'G', 'T', 'P', 'E']
+    div = 1024
+    exp = 0
+
+    while nbytes > div:
+        nbytes /= div
+        exp += 1
+    if exp < len(exps):
+        e = exps[exp]
+    else:
+        e = f'e{exp * 3}'
+    return f'{nbytes:.1f}{e}B'

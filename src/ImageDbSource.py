@@ -2,11 +2,9 @@
 # which is based on https://github.com/Cellular-Imaging-Amsterdam-UMC/crxReader
 # Screen Plate Well (SPW) - High Content Screening (HCS) https://ome-model.readthedocs.io/en/stable/developers/screen-plate-well.html
 
-import logging
 import numpy as np
-import os
-import sqlite3
 
+from src.DbReader import DBReader
 from src.ImageSource import ImageSource
 from src.util import *
 
@@ -18,7 +16,7 @@ class ImageDbSource(ImageSource):
         self.data = None
         self.metadata['dim_order'] = 'tczyx'
 
-    def read_experiment_info(self):
+    def init_metadata(self):
         self._get_time_series_info()
         self._get_experiment_metadata()
         self._get_well_info()
@@ -28,9 +26,11 @@ class ImageDbSource(ImageSource):
     def _get_time_series_info(self):
         time_series_ids = sorted(self.db.fetch_all('SELECT DISTINCT TimeSeriesElementId FROM SourceImageBase', return_dicts=False))
         self.metadata['time_points'] = time_series_ids
+        self.metadata['num_time_points'] = len(time_series_ids)
 
         level_ids = sorted(self.db.fetch_all('SELECT DISTINCT level FROM SourceImageBase', return_dicts=False))
         self.metadata['levels'] = level_ids
+        self.metadata['num_levels'] = len(level_ids)
 
         image_files = {time_series_id: os.path.join(os.path.dirname(self.uri), f'images-{time_series_id}.db')
                        for time_series_id in time_series_ids}
@@ -62,6 +62,7 @@ class ImageDbSource(ImageSource):
         for channel_info in channel_infos:
             channel_info['Color'] = channel_info['Color'][1:]   # remove leading '#'
         self.metadata['channels'] = channel_infos
+        self.metadata['num_channels'] = len(channel_infos)
 
         wells = self.db.fetch_all('SELECT DISTINCT Name FROM Well')
         zone_names = [well['Name'] for well in wells]
@@ -78,7 +79,6 @@ class ImageDbSource(ImageSource):
         well_info['fields'] = [f'{site_index}' for site_index in range(num_sites)]
 
         image_wells = self.db.fetch_all('SELECT Name, ZoneIndex, CoordX, CoordY FROM Well WHERE HasImages = 1')
-        self.metadata['num_wells'] = len(image_wells)
         self.metadata['wells'] = dict(sorted({well['Name']: well for well in image_wells}.items(),
                                              key=lambda x: split_well_name(x[0], col_as_int=True)))
 
@@ -99,7 +99,16 @@ class ImageDbSource(ImageSource):
         bits_per_pixel = int(np.ceil(bits_per_pixel / 8)) * 8
         if bits_per_pixel == 24:
             bits_per_pixel = 32
-        self.metadata['dtype'] = np.dtype(f'uint{bits_per_pixel}').type
+        self.metadata['dtype'] = np.dtype(f'uint{bits_per_pixel}')
+
+        image_info = self.db.fetch_all('''
+            SELECT *
+            FROM SourceImageBase
+            WHERE level = 0
+            ORDER BY CoordX ASC, CoordY ASC
+        ''')
+        max_data_size = np.sum([info['SizeX'] * info['SizeY'] * info.get('SizeZ', 1) for info in image_info]) * bits_per_pixel // 8
+        self.metadata['max_data_size'] = max_data_size
 
     def _read_well_info(self, well_id, channel=None, time_point=None, level=0):
         well_id = remove_leading_zeros(well_id)
@@ -153,7 +162,7 @@ class ImageDbSource(ImageSource):
         sitesx = well_info['SitesX']
         sitesy = well_info['SitesY']
         sitesz = well_info.get('SitesZ', 1)
-        numsites = well_info['num_sites']
+        num_sites = well_info['num_sites']
         sizex = well_info['SensorSizeXPixels']
         sizey = well_info['SensorSizeYPixels']
         sizez = well_info.get('SensorSizeZPixels', 1)
@@ -172,7 +181,7 @@ class ImageDbSource(ImageSource):
                         startz = zi * sizez
                         data.append(self.data[..., startz:startz + sizez, starty:starty + sizey, startx:startx + sizex])
             return data
-        elif 0 <= site_id < numsites:
+        elif 0 <= site_id < num_sites:
             # Return specific site
             xi = site_id % sitesx
             yi = (site_id // sitesx) % sitesy
@@ -191,6 +200,27 @@ class ImageDbSource(ImageSource):
     def get_image(self, field_id):
         return self._extract_site(field_id)
 
+    def get_rows(self):
+        return self.metadata['well_info']['rows']
+
+    def get_columns(self):
+        return self.metadata['well_info']['columns']
+
+    def get_wells(self):
+        return list(self.metadata['wells'].keys())
+
+    def get_time_points(self):
+        return self.metadata['time_points']
+
+    def get_fields(self):
+        return self.metadata['well_info']['fields']
+
+    def get_dim_order(self):
+        return self.metadata.get('dim_order', 'tczyx')
+
+    def get_dtype(self):
+        return self.metadata.get('dtype')
+
     def get_pixel_size_um(self):
         pixel_size = self.metadata['well_info'].get('PixelSizeUm', 1)
         return {'x': pixel_size, 'y': pixel_size}
@@ -202,7 +232,33 @@ class ImageDbSource(ImageSource):
         y = well.get('CoordY', 0) * well_info['max_sizey_um']
         return {'x': x, 'y': y}
 
-    def display_well_matrix(self):
+    def get_channels(self):
+        channels = []
+        for channel0 in self.metadata['channels']:
+            channel = {'label': channel0.get('Dye'),
+                       'color': channel0.get('Color')}
+            channels.append(channel)
+        return channels
+
+    def get_nchannels(self):
+        return max(self.metadata['num_channels'], 1)
+
+    def get_acquisitions(self):
+        acquisitions = []
+        for index, acq in enumerate(self.metadata.get('acquisitions', [])):
+            acquisitions.append({
+                'id': index,
+                'name': acq['Name'],
+                'description': acq['Description'],
+                'date_created': acq['DateCreated'].isoformat(),
+                'date_modified': acq['DateModified'].isoformat()
+            })
+        return acquisitions
+
+    def get_total_data_size(self):
+        return self.metadata['max_data_size']
+
+    def print_well_matrix(self):
         s = ''
 
         time_points = self.metadata['time_points']
@@ -228,29 +284,3 @@ class ImageDbSource(ImageSource):
 
     def close(self):
         self.db.close()
-
-
-class DBReader:
-    def __init__(self, db_file):
-        self.conn = sqlite3.connect(db_file)
-        self.conn.row_factory = DBReader.dict_factory
-
-    @staticmethod
-    def dict_factory(cursor, row):
-        dct = {}
-        for index, column in enumerate(cursor.description):
-            dct[column[0]] = row[index]
-        return dct
-
-    def fetch_all(self, query, params=(), return_dicts=True):
-        cursor = self.conn.cursor()
-        cursor.execute(query, params)
-        dct = cursor.fetchall()
-        if return_dicts:
-            values = dct
-        else:
-            values = [list(row.values())[0] for row in dct]
-        return values
-
-    def close(self):
-        self.conn.close()

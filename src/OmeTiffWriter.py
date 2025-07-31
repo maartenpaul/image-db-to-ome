@@ -9,6 +9,10 @@ from src.util import *
 
 
 class OmeTiffWriter(OmeWriter):
+    def __init__(self, verbose=False):
+        super().__init__()
+        self.verbose = verbose
+
     def write(self, filename, source, well_id=None, field_id=None, tiff_compression=None):
         filepath, filename = os.path.split(filename)
         filetitle, ext = os.path.splitext(filename)

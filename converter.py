@@ -6,7 +6,7 @@ import shutil
 from src.ImageDbSource import ImageDbSource
 from src.OmeTiffWriter import OmeTiffWriter
 from src.OmeZarrWriter import OmeZarrWriter
-from src.util import splitall, print_dict
+from src.util import splitall, print_dict, print_hbytes
 
 
 def init_logging(log_filename):
@@ -32,10 +32,10 @@ def convert(input_filename, output_folder, alt_output_folder=None,
         else:
             zarr_version = 2
             ome_version = '0.4'
-        writer = OmeZarrWriter(zarr_version=zarr_version, ome_version=ome_version)
+        writer = OmeZarrWriter(zarr_version=zarr_version, ome_version=ome_version, verbose=verbose)
         ext = '.ome.zarr'
     elif 'tif' in output_format:
-        writer = OmeTiffWriter()
+        writer = OmeTiffWriter(verbose=verbose)
         ext = '.ome.tiff'
     else:
         raise ValueError(f'Unsupported output format: {output_format}')
@@ -51,10 +51,11 @@ def convert(input_filename, output_folder, alt_output_folder=None,
 
     logging.info(f'Importing {input_filename}')
     source = ImageDbSource(input_filename)
-    info = source.read_experiment_info()
+    metadata = source.init_metadata()
     if verbose:
-        print(print_dict(info))
-        print(source.display_well_matrix())
+        print(print_dict(metadata))
+        print(source.print_well_matrix())
+        print(f'Total data size {print_hbytes(source.get_total_data_size())}')
     writer.write(output_path, source)
     source.close()
 
@@ -79,9 +80,14 @@ def convert(input_filename, output_folder, alt_output_folder=None,
 
 
 if __name__ == '__main__':
-    #filename = 'D:/slides/DB/2ChannelPlusTL/experiment.db'
-    #filename = 'D:/slides/DB/PicoData16ProcCoverag/experiment.db'
-    filename = 'D:/slides/DB/241209 - TC1 TC9 test MSP MUB/experiment.db'
-    output_folder = 'D:/slides/DB/'
+    basedir = 'C:/Project/slides/DB/'
+    #basedir = 'D:/slides/DB/'
+    filename = basedir + '2ChannelPlusTL/experiment.db'
+    #filename = basedir + '2ChannelPlusTL/experiment.db'
+    #filename = basedir + 'PicoData16ProcCoverag/experiment.db'
+    #filename = basedir + '241209 - TC1 TC9 test MSP MUB/experiment.db'
 
-    convert(filename, output_folder)
+    output_folder = basedir
+
+    init_logging('db_to_zarr.log')
+    convert(filename, output_folder, show_progress=True, verbose=True)

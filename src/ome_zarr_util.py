@@ -51,9 +51,8 @@ def create_channel_metadata(dtype, channels, nchannels, ome_version):
 
     omezarr_channels = []
     for channeli, channel0 in enumerate(channels):
-        channel = {'label': channel0.get('label', channel0.get('Dye')),
-                   'color': channel0.get('color', channel0.get('Color'))}
-        if np.dtype(dtype).kind == 'f':
+        channel = channel0.copy()
+        if dtype.kind == 'f':
             # info = np.finfo(dtype)
             start, end = 0, 1
         else:
