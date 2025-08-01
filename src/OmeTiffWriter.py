@@ -14,7 +14,7 @@ class OmeTiffWriter(OmeWriter):
 
     def write(self, filename, source, name=None, well_id=None, field_id=None, tiff_compression=None):
         from tifffile import tifffile
-        
+
         filepath, filename = os.path.split(filename)
         filetitle, ext = os.path.splitext(filename)
 
