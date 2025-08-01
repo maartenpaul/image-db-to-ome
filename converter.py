@@ -71,9 +71,9 @@ def convert(input_filename, output_folder, alt_output_folder=None,
             os.makedirs(alt_output_folder)
         alt_output_path = os.path.join(alt_output_folder, output_filename + ext)
         if 'zar' in output_format:
-            shutil.copytree(output_path, alt_output_path)
+            shutil.copytree(output_path, alt_output_path, dirs_exist_ok=True)
         else:
-            shutil.copy(output_path, alt_output_path)
+            shutil.copy2(output_path, alt_output_path)
         result['alt_full_path'] = alt_output_path
         message += f' and {alt_output_path}'
 
@@ -85,8 +85,8 @@ def convert(input_filename, output_folder, alt_output_folder=None,
 
 
 if __name__ == '__main__':
-    basedir = 'C:/Project/slides/DB/'
-    #basedir = 'D:/slides/DB/'
+    #basedir = 'C:/Project/slides/DB/'
+    basedir = 'D:/slides/DB/'
 
     filename = 'TestData1'
     #filename = '2ChannelPlusTL'

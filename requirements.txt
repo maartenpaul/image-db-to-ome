@@ -1,0 +1,4 @@
+numpy
+zarr
+ome-zarr
+#tifffile

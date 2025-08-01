@@ -1,10 +1,5 @@
 # https://ome-zarr.readthedocs.io/en/stable/python.html#writing-hcs-datasets-to-ome-ngff
 
-from ome_zarr.io import parse_url
-from ome_zarr.scale import Scaler
-from ome_zarr.writer import write_plate_metadata, write_well_metadata, write_image
-import zarr
-
 from src.OmeWriter import OmeWriter
 from src.ome_zarr_util import *
 from src.parameters import VERSION
@@ -25,6 +20,11 @@ class OmeZarrWriter(OmeWriter):
         self.verbose = verbose
 
     def write(self, filename, source, name=None, **kwargs):
+        from ome_zarr.io import parse_url
+        from ome_zarr.scale import Scaler
+        from ome_zarr.writer import write_plate_metadata, write_well_metadata, write_image
+        import zarr
+
         zarr_root = zarr.open_group(store=parse_url(filename, mode='w').store, mode='w', zarr_version=self.zarr_version)
 
         dtype = source.get_dtype()
