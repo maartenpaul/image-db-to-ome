@@ -12,7 +12,7 @@ class OmeTiffWriter(OmeWriter):
         super().__init__()
         self.verbose = verbose
 
-    def write(self, filename, source, name=None, well_id=None, field_id=None, tiff_compression=None):
+    def write(self, filename, source, name=None, well_id=None, field_id=None, tiff_compression=None, **kwargs):
         from tifffile import tifffile
 
         filepath, filename = os.path.split(filename)

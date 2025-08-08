@@ -3,8 +3,11 @@ channels:
  - conda-forge
  - defaults
 dependencies:
- - python=3.12
+ - python==3.12
  - numpy
- - zarr
- - ome-zarr
-# - tifffile
+#- tifffile
+ - zarr>=3
+#- ome-zarr
+ - pip
+ - pip:
+   - ome-zarr>=v0.12rc1

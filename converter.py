@@ -95,7 +95,10 @@ if __name__ == '__main__':
     #filename = '20220714_TKI_482'
     #filename = 'Cells'
 
+    output_format = 'omezarr2'
+
     output_folder = basedir
 
     init_logging('db_to_zarr.log')
-    convert(basedir + filename + '/experiment.db', output_folder, show_progress=True, verbose=True)
+    convert(basedir + filename + '/experiment.db', output_folder, output_format=output_format,
+            show_progress=True, verbose=True)

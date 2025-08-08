@@ -11,12 +11,14 @@ class OmeZarrWriter(OmeWriter):
         super().__init__()
         self.zarr_version = zarr_version
         self.ome_version = ome_version
-        if ome_version == '0.5':
+        if ome_version == '0.4':
+            from ome_zarr.format import FormatV04
+            self.ome_format = FormatV04()
+        elif ome_version == '0.5':
             from ome_zarr.format import FormatV05
             self.ome_format = FormatV05()
         else:
-            from ome_zarr.format import FormatV04
-            self.ome_format = FormatV04()
+            self.ome_format = None
         self.verbose = verbose
 
     def write(self, filename, source, name=None, **kwargs):
