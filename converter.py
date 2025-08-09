@@ -6,6 +6,7 @@ import shutil
 from src.ImageDbSource import ImageDbSource
 from src.OmeTiffWriter import OmeTiffWriter
 from src.OmeZarrWriter import OmeZarrWriter
+from src.Timer import Timer
 from src.util import splitall, print_dict, print_hbytes
 
 
@@ -100,5 +101,6 @@ if __name__ == '__main__':
     output_folder = basedir
 
     init_logging('db_to_zarr.log')
-    convert(basedir + filename + '/experiment.db', output_folder, output_format=output_format,
-            show_progress=True, verbose=True)
+    with Timer(f'convert {filename} to zarr'):
+        convert(basedir + filename + '/experiment.db', output_folder, output_format=output_format,
+                show_progress=True, verbose=True)
