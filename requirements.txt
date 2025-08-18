@@ -1,4 +1,2 @@
-numpy
-zarr
-ome-zarr
+ome-zarr>=v0.12rc1
 #tifffile
