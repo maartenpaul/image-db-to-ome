@@ -14,6 +14,7 @@ class ImageDbSource(ImageSource):
         super().__init__(uri, metadata)
         self.db = DBReader(self.uri)
         self.data = None
+        self.data_well_id = None
         self.metadata['dim_order'] = 'tczyx'
 
     def init_metadata(self):
@@ -57,8 +58,6 @@ class ImageDbSource(ImageSource):
             FROM ImagechannelExp
             ORDER BY ChannelNumber
         ''')
-        for channel_info in channel_infos:
-            channel_info['Color'] = channel_info['Color'][1:]   # remove leading '#'
         self.metadata['channels'] = channel_infos
         self.metadata['num_channels'] = len(channel_infos)
 
@@ -189,11 +188,10 @@ class ImageDbSource(ImageSource):
         else:
             raise ValueError(f'Invalid site: {site_id}')
 
-    def select_well(self, well_id):
-        well_data = self._read_well_info(well_id)
-        self._assemble_image_data(well_data)
-
-    def get_image(self, field_id):
+    def get_data(self, well_id, field_id):
+        if well_id != self.data_well_id:
+            self._assemble_image_data(self._read_well_info(well_id))
+            self.data_well_id = well_id
         return self._extract_site(field_id)
 
     def get_name(self):
@@ -210,7 +208,7 @@ class ImageDbSource(ImageSource):
         return self.metadata['well_info']['columns']
 
     def get_wells(self):
-        return list(self.metadata['wells'].keys())
+        return list(self.metadata['wells'])
 
     def get_time_points(self):
         return self.metadata['time_points']
@@ -239,7 +237,9 @@ class ImageDbSource(ImageSource):
         channels = []
         for channel0 in self.metadata['channels']:
             channel = {'label': channel0.get('Dye'),
-                       'color': channel0.get('Color')}
+                       'color': channel0.get('Color').lstrip('#')}
+            if channel['label'] is None:
+                channel['label'] = ''
             channels.append(channel)
         return channels
 

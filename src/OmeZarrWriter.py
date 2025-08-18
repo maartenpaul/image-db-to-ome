@@ -22,12 +22,14 @@ class OmeZarrWriter(OmeWriter):
         self.verbose = verbose
 
     def write(self, filename, source, name=None, **kwargs):
-        from ome_zarr.io import parse_url
+        #from ome_zarr.io import parse_url
         from ome_zarr.scale import Scaler
         from ome_zarr.writer import write_plate_metadata, write_well_metadata, write_image
         import zarr
 
-        zarr_root = zarr.open_group(store=parse_url(filename, mode='w').store, mode='w', zarr_version=self.zarr_version)
+        #zarr_location = parse_url(filename, mode='w', fmt=self.ome_format)
+        zarr_location = filename
+        zarr_root = zarr.open_group(zarr_location, mode='w', zarr_version=self.zarr_version)
 
         dtype = source.get_dtype()
         channels = source.get_channels()
@@ -51,7 +53,6 @@ class OmeZarrWriter(OmeWriter):
             row_group = zarr_root.require_group(str(row))
             well_group = row_group.require_group(str(col))
             write_well_metadata(well_group, field_paths, fmt=self.ome_format)
-            source.select_well(well_id)
 
             scaler = Scaler()
             pixel_size_scales = []
@@ -64,7 +65,7 @@ class OmeZarrWriter(OmeWriter):
 
             for field_index, field in enumerate(field_paths):
                 image_group = well_group.require_group(str(field))
-                data = source.get_image(field_index)
+                data = source.get_data(well_id, field_index)
                 write_image(image=data, group=image_group, axes=axes, coordinate_transformations=pixel_size_scales,
                             scaler=scaler, fmt=self.ome_format)
                 total_size += data.size * dtype.itemsize

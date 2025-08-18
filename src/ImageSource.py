@@ -9,11 +9,8 @@ class ImageSource(ABC):
     def init_metadata(self):
         raise NotImplementedError("The 'init_metadata' method must be implemented by subclasses.")
 
-    def select_well(self, well_id):
-        raise NotImplementedError("The 'select_well' method must be implemented by subclasses.")
-
-    def get_image(self, field_id):
-        raise NotImplementedError("The 'get_image' method must be implemented by subclasses.")
+    def get_data(self, well_id, field_id):
+        raise NotImplementedError("The 'get_data' method must be implemented by subclasses.")
 
     def get_name(self):
         raise NotImplementedError("The 'get_name' method must be implemented by subclasses.")

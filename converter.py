@@ -6,7 +6,6 @@ import shutil
 from src.ImageDbSource import ImageDbSource
 from src.OmeTiffWriter import OmeTiffWriter
 from src.OmeZarrWriter import OmeZarrWriter
-from src.Timer import Timer
 from src.util import splitall, print_dict, print_hbytes
 
 
@@ -83,24 +82,3 @@ def convert(input_filename, output_folder, alt_output_folder=None,
         print(message)
 
     return json.dumps(result)
-
-
-if __name__ == '__main__':
-    #basedir = 'C:/Project/slides/DB/'
-    basedir = 'D:/slides/DB/'
-
-    filename = 'TestData1'
-    #filename = '2ChannelPlusTL'
-    #filename = 'PicoData16ProcCoverag'
-    #filename = '241209 - TC1 TC9 test MSP MUB'
-    #filename = '20220714_TKI_482'
-    #filename = 'Cells'
-
-    output_format = 'omezarr2'
-
-    output_folder = basedir
-
-    init_logging('db_to_zarr.log')
-    with Timer(f'convert {filename} to zarr'):
-        convert(basedir + filename + '/experiment.db', output_folder, output_format=output_format,
-                show_progress=True, verbose=True)

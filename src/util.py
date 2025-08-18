@@ -74,11 +74,9 @@ def print_dict(value, tab=0, bullet=False):
         for key, subvalue in value.items():
             s += '\n'
             if bullet:
-                s += '\t' * (tab - 1) + '-   '
+                s += '-'
                 bullet = False
-            else:
-                s += '\t' * tab
-            s += str(key) + ': '
+            s += '\t' * tab + str(key) + ': '
             if isinstance(subvalue, dict):
                 s += print_dict(subvalue, tab+1)
             elif isinstance(subvalue, list):

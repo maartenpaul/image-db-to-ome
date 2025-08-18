@@ -25,8 +25,7 @@ class OmeTiffWriter(OmeWriter):
 
         filename = os.path.join(filepath, filename + ext)
 
-        source.select_well(well_id)
-        data = source.get_image(field_id)
+        data = source.get_data(well_id, field_id)
 
         if ext.lower() in ['.tif', '.tiff']:
             with tifffile.TiffWriter(filename) as tif:
