@@ -1,6 +1,6 @@
-# image-db-to-zarr
+# image-db-to-ome
 - Extract and process image data from ImageXpress Pico, Molecular Devices, CellReporterXpress experiment and image db files
-- Export to ome-zarr supporting Screen Plate Well / High Content Screening format
+- Export to ome-tiff and ome-zarr supporting Screen Plate Well / High Content Screening format
 
 
 
@@ -21,17 +21,17 @@ DateCreated: 2023-06-01 13:50:24.080571
 Creator: Me
 Name: TestRon
 acquisitions:
--   Name: TestData
+-       Name: TestData
         Description: Preset Protocol for the OrganoPlate 3-lane (Mimetas B.V.)
         DateCreated: 2023-06-01 13:50:28.034732
         DateModified: 2023-06-01 13:50:30.669354
 channels:
--   ChannelNumber: 0
+-       ChannelNumber: 0
         Emission: 470
         Excitation: 387
         Dye: DAPI
         Color: 1CA9C9
--   ChannelNumber: 1
+-       ChannelNumber: 1
         Emission: 0
         Excitation: 0
         Dye: None
