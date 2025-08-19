@@ -17,6 +17,8 @@ def init_logging(log_filename):
                         handlers=[logging.StreamHandler(), logging.FileHandler(log_filename, encoding='utf-8')],
                         encoding='utf-8')
 
+    logging.getLogger('ome_zarr').setLevel(logging.WARNING)     # mute verbose ome_zarr logging
+
 
 def convert(input_filename, output_folder, alt_output_folder=None,
             output_format='omezarr2', show_progress=False, verbose=False):
