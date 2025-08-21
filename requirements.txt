@@ -1,2 +1,2 @@
-ome-zarr>=v0.12rc1
-#tifffile
+ome-zarr
+tifffile

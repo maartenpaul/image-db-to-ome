@@ -5,9 +5,7 @@ channels:
 dependencies:
  - python==3.12
  - numpy
-#- tifffile
- - zarr>=3
-#- ome-zarr
+ - zarr
+ - ome-zarr
+ - tifffile
  - pip
- - pip:
-   - ome-zarr>=v0.12rc1

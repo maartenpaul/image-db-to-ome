@@ -11,8 +11,8 @@ from util import splitall, print_dict
 
 
 class TestConvert:
-    basedir = 'C:/Project/slides/DB/'
-    #basedir = 'D:/slides/DB/'
+    #basedir = 'C:/Project/slides/DB/'
+    basedir = 'D:/slides/DB/'
 
     filename = 'TestData1'
     #filename = '2ChannelPlusTL'
