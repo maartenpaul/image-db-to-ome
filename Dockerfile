@@ -9,17 +9,18 @@ COPY requirements.txt .
 COPY src/*.py src/
 COPY *.py .
 
-# Create and activate virtual environment, install dependencies
+# Install dependencies
 RUN pip install -r requirements.txt
 
 # Expose as a CLI
 ENTRYPOINT ["python", "main.py"]
 
-# docker build -t convertimagedb-docker .
+# docker build -t image-db-to-ome .
+# docker build -t cellularimagingcf/image-db-to-ome:v0.0.1 .
 
 # WSL Example usage:
 
 # sudo mkdir -p /mnt/data
 # sudo mount -t drvfs L:/Archief/active/cellular_imaging/OMERO_test/ValidateDocker /mnt/data
 
-# docker run --rm -v "D:\slides\DB:/data" convertimagedb-docker --inputfile /data/TestData1/experiment.db --output_folder "/data" --show_progress
+# docker run --rm -v "D:\slides\DB:/data" image-db-to-ome --inputfile /data/TestData1/experiment.db --output_folder "/data" --show_progress
