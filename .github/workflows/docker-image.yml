@@ -7,7 +7,7 @@ on:
     types: [published]
 
 env:
-  IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPOSITORY_NAME }}
+  IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
   
 jobs:
   docker:
