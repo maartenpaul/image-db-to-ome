@@ -76,7 +76,7 @@ def convert(input_filename, output_folder, alt_output_folder=None,
             shutil.copytree(output_path, alt_output_path, dirs_exist_ok=True)
         else:
             shutil.copy2(output_path, alt_output_path)
-        result['alt_full_path'] = alt_output_path
+        result['alt_path'] = alt_output_path
         message += f' and {alt_output_path}'
 
     logging.info(message)
