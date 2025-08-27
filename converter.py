@@ -42,14 +42,8 @@ def convert(input_filename, output_folder, alt_output_folder=None,
     else:
         raise ValueError(f'Unsupported output format: {output_format}')
 
-    output_filename = splitall(os.path.splitext(input_filename)[0])[-2]
-    output_path = os.path.join(output_folder, output_filename + ext)
-
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-
-    if show_progress:
-        print(f'Converting {input_filename} to {output_path}')
 
     logging.info(f'Importing {input_filename}')
     source = ImageDbSource(input_filename)
@@ -60,18 +54,21 @@ def convert(input_filename, output_folder, alt_output_folder=None,
         print(source.print_well_matrix())
         print(source.print_timepoint_well_matrix())
         print(f'Total data size:    {print_hbytes(source.get_total_data_size())}')
+
     name = source.get_name()
-    if not name:
-        name = output_filename
+    output_path = os.path.join(output_folder, name + ext)
     writer.write(output_path, source, name=name)
     source.close()
 
+    if show_progress:
+        print(f'Converting {input_filename} to {output_path}')
+
     message = f'Exported  {output_path}'
-    result = {'name': output_filename, 'full_path': output_path}
+    result = {'name': name, 'full_path': output_path}
     if alt_output_folder:
         if not os.path.exists(alt_output_folder):
             os.makedirs(alt_output_folder)
-        alt_output_path = os.path.join(alt_output_folder, output_filename + ext)
+        alt_output_path = os.path.join(alt_output_folder, name + ext)
         if 'zar' in output_format:
             shutil.copytree(output_path, alt_output_path, dirs_exist_ok=True)
         else:

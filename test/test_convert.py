@@ -38,7 +38,7 @@ class TestConvert:
     )
     def test_convert(self, tmp_path, input_filename, output_format):
         init_logging('log/db_to_zarr.log')
-        with Timer(f'convert {input_filename} to zarr'):
+        with Timer(f'convert {input_filename} to {output_format}'):
             convert(input_filename, tmp_path, output_format=output_format)
 
         source = ImageDbSource(input_filename)
@@ -47,8 +47,7 @@ class TestConvert:
         source_pixel_size = source.get_pixel_size_um()
         source_wells = source.get_wells()
 
-        output_filename = splitall(os.path.splitext(input_filename)[0])[-2]
-        output_path = os.path.join(tmp_path, output_filename + '.ome.zarr')
+        output_path = os.path.join(tmp_path, source.get_name() + '.ome.zarr')
         reader = Reader(parse_url(output_path))
 
         if '2' in output_format:

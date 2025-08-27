@@ -197,9 +197,8 @@ class ImageDbSource(ImageSource):
     def get_name(self):
         name = self.metadata.get('Name')
         if not name:
-            return None
-        else:
-            return name
+            name = splitall(os.path.splitext(self.uri)[0])[-2]
+        return name
 
     def get_rows(self):
         return self.metadata['well_info']['rows']
