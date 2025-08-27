@@ -6,7 +6,7 @@ import shutil
 from src.ImageDbSource import ImageDbSource
 from src.OmeTiffWriter import OmeTiffWriter
 from src.OmeZarrWriter import OmeZarrWriter
-from src.util import splitall, print_dict, print_hbytes
+from src.util import print_dict, print_hbytes
 
 
 def init_logging(log_filename):
@@ -80,4 +80,4 @@ def convert(input_filename, output_folder, alt_output_folder=None,
     if show_progress:
         print(message)
 
-    return json.dumps(result)
+    return json.dumps([result])
