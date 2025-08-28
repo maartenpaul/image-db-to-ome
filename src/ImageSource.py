@@ -9,7 +9,10 @@ class ImageSource(ABC):
     def init_metadata(self):
         raise NotImplementedError("The 'init_metadata' method must be implemented by subclasses.")
 
-    def get_data(self, well_id, field_id):
+    def is_screen(self):
+        raise NotImplementedError("The 'is_screen' method must be implemented by subclasses.")
+
+    def get_data(self, well_id=None, field_id=None):
         raise NotImplementedError("The 'get_data' method must be implemented by subclasses.")
 
     def get_name(self):
@@ -24,8 +27,8 @@ class ImageSource(ABC):
     def get_pixel_size_um(self):
         raise NotImplementedError("The 'get_pixel_size_um' method must be implemented by subclasses.")
 
-    def get_well_coords_um(self, well_id):
-        raise NotImplementedError("The 'get_well_coords_um' method must be implemented by subclasses.")
+    def get_position_um(self, well_id=None):
+        raise NotImplementedError("The 'get_position_um' method must be implemented by subclasses.")
 
     def get_channels(self):
         raise NotImplementedError("The 'get_channels' method must be implemented by subclasses.")

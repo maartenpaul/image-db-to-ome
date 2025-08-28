@@ -5,6 +5,11 @@ from src.ome_zarr_util import *
 from src.parameters import VERSION
 from src.util import split_well_name, print_hbytes
 
+#from ome_zarr.io import parse_url
+from ome_zarr.scale import Scaler
+from ome_zarr.writer import write_image, write_plate_metadata, write_well_metadata
+import zarr
+
 
 class OmeZarrWriter(OmeWriter):
     def __init__(self, zarr_version=2, ome_version='0.4', verbose=False):
@@ -22,18 +27,26 @@ class OmeZarrWriter(OmeWriter):
         self.verbose = verbose
 
     def write(self, filename, source, name=None, **kwargs):
-        #from ome_zarr.io import parse_url
-        from ome_zarr.scale import Scaler
-        from ome_zarr.writer import write_plate_metadata, write_well_metadata, write_image
-        import zarr
-
-        #zarr_location = parse_url(filename, mode='w', fmt=self.ome_format)
-        zarr_location = filename
-        zarr_root = zarr.open_group(zarr_location, mode='w', zarr_version=self.zarr_version)
+        if source.is_screen():
+            zarr_root, total_size = self._write_screen(filename, source, name, **kwargs)
+        else:
+            zarr_root, total_size = self._write_image(filename, source)
 
         dtype = source.get_dtype()
         channels = source.get_channels()
         nchannels = source.get_nchannels()
+
+        zarr_root.attrs['omero'] = create_channel_metadata(dtype, channels, nchannels, self.ome_version)
+        zarr_root.attrs['_creator'] = {'name': 'OmeZarrWriter', 'version': VERSION}
+
+        if self.verbose:
+            print(f'Total data written: {print_hbytes(total_size)}')
+
+
+    def _write_screen(self, filename, source, name=None, **kwargs):
+        #zarr_location = parse_url(filename, mode='w', fmt=self.ome_format)
+        zarr_location = filename
+        zarr_root = zarr.open_group(zarr_location, mode='w', zarr_version=self.zarr_version)
 
         row_names = source.get_rows()
         col_names = source.get_columns()
@@ -43,7 +56,6 @@ class OmeZarrWriter(OmeWriter):
 
         axes = create_axes_metadata(source.get_dim_order())
         acquisitions = source.get_acquisitions()
-
         write_plate_metadata(zarr_root, row_names, col_names, well_paths,
                              name=name, field_count=len(field_paths), acquisitions=acquisitions,
                              fmt=self.ome_format)
@@ -54,24 +66,40 @@ class OmeZarrWriter(OmeWriter):
             well_group = row_group.require_group(str(col))
             write_well_metadata(well_group, field_paths, fmt=self.ome_format)
 
-            scaler = Scaler()
-            pixel_size_scales = []
-            scale = 1
-            for i in range(scaler.max_layer + 1):
-                pixel_size_scales.append(
-                    create_transformation_metadata(source.get_dim_order(), source.get_pixel_size_um(),
-                                                   scale, source.get_well_coords_um(well_id)))
-                scale /= scaler.downscale
-
+            pixel_size_scales, scaler = self._create_scale_metadata(source, source.get_position_um(well_id))
             for field_index, field in enumerate(field_paths):
                 image_group = well_group.require_group(str(field))
                 data = source.get_data(well_id, field_index)
-                write_image(image=data, group=image_group, axes=axes, coordinate_transformations=pixel_size_scales,
-                            scaler=scaler, fmt=self.ome_format)
-                total_size += data.size * dtype.itemsize
+                size = self._write_data(image_group, data, axes, pixel_size_scales, scaler)
+                total_size += size
 
-        if self.verbose:
-            print(f'Total data written: {print_hbytes(total_size)}')
+        return zarr_root, total_size
 
-        zarr_root.attrs['omero'] = create_channel_metadata(dtype, channels, nchannels, self.ome_version)
-        zarr_root.attrs['_creator'] = {'name': 'OmeZarrWriter', 'version': VERSION}
+    def _write_image(self, filename, source):
+        #zarr_location = parse_url(filename, mode='w', fmt=self.ome_format)
+        zarr_location = filename
+        zarr_root = zarr.open_group(zarr_location, mode='w', zarr_version=self.zarr_version)
+
+        axes = create_axes_metadata(source.get_dim_order())
+        pixel_size_scales, scaler = self._create_scale_metadata(source, source.get_position_um())
+        data = source.get_data()
+        size = self._write_data(zarr_root, data, axes, pixel_size_scales, scaler)
+        return zarr_root, size
+
+    def _write_data(self, group, data, axes, pixel_size_scales, scaler):
+        write_image(image=data, group=group, axes=axes, coordinate_transformations=pixel_size_scales,
+                    scaler=scaler, fmt=self.ome_format)
+        size = data.size * data.dtype.itemsize
+        return size
+
+    def _create_scale_metadata(self, source, translation, scaler=None):
+        if scaler is None:
+            scaler = Scaler()
+        pixel_size_scales = []
+        scale = 1
+        for i in range(scaler.max_layer + 1):
+            pixel_size_scales.append(
+                create_transformation_metadata(source.get_dim_order(), source.get_pixel_size_um(),
+                                               scale, translation))
+            scale /= scaler.downscale
+        return pixel_size_scales, scaler
