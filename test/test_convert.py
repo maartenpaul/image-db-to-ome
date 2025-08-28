@@ -11,17 +11,20 @@ from util import splitall, print_dict
 
 
 class TestConvert:
-    #basedir = 'C:/Project/slides/DB/'
-    basedir = 'D:/slides/DB/'
+    basedir = 'C:/Project/slides/DB/'
+    #basedir = 'D:/slides/DB/'
+    #basedir = 'C:/Project/slides/Ome-tiff/'
 
-    filename = 'TestData1'
-    #filename = '2ChannelPlusTL'
-    #filename = 'PicoData16ProcCoverag'
-    #filename = '241209 - TC1 TC9 test MSP MUB'
-    #filename = '20220714_TKI_482'
-    #filename = 'Cells'
+    filename = 'TestData1/experiment.db'
+    #filename = '2ChannelPlusTL/experiment.db'
+    #filename = 'PicoData16ProcCoverag/experiment.db'
+    #filename = '241209 - TC1 TC9 test MSP MUB/experiment.db'
+    #filename = '20220714_TKI_482/experiment.db'
+    #filename = 'Cells/experiment.db'
+    #filename = 'NIRHTa-001.ome.tiff'
+    #filename = 'single-channel.ome.tiff'
 
-    input_filename = basedir + filename + '/experiment.db'
+    input_filename = basedir + filename
 
     @pytest.mark.parametrize(
         "input_filename, output_format",

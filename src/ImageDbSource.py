@@ -188,7 +188,10 @@ class ImageDbSource(ImageSource):
         else:
             raise ValueError(f'Invalid site: {site_id}')
 
-    def get_data(self, well_id, field_id):
+    def is_screen(self):
+        return len(self.metadata['wells']) > 0
+
+    def get_data(self, well_id=None, field_id=None):
         if well_id != self.data_well_id:
             self._assemble_image_data(self._read_well_info(well_id))
             self.data_well_id = well_id
@@ -225,7 +228,7 @@ class ImageDbSource(ImageSource):
         pixel_size = self.metadata['well_info'].get('PixelSizeUm', 1)
         return {'x': pixel_size, 'y': pixel_size}
 
-    def get_well_coords_um(self, well_id):
+    def get_position_um(self, well_id=None):
         well = self.metadata['wells'][well_id]
         well_info = self.metadata['well_info']
         x = well.get('CoordX', 0) * well_info['max_sizex_um']
