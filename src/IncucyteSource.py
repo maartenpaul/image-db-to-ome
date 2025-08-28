@@ -1,13 +1,11 @@
-import os
-import re
 import numpy as np
+import re
 from pathlib import Path
-from collections import defaultdict
 import tifffile
 from datetime import datetime
 
 from src.ImageSource import ImageSource
-from src.util import *
+from src.util import strip_leading_zeros
 
 
 class IncucyteSource(ImageSource):
@@ -186,31 +184,79 @@ class IncucyteSource(ImageSource):
         
         self.metadata['wells'] = wells_dict
         self.metadata['well_info'] = well_info
+
+    def is_screen(self):
+        return len(self.metadata['wells']) > 0
+    
+    def get_position_um(self, well_id=None):
+        well = self.metadata['wells'][well_id]
+        well_info = self.metadata['well_info']
+        x = well.get('CoordX', 0) * well_info['max_sizex_um']
+        y = well.get('CoordY', 0) * well_info['max_sizey_um']
+        return {'x': x, 'y': y}
     
     def _get_sample_image_info(self):
         """Get image dimensions and bit depth from first available TIFF"""
+        # Citation: pixel size extraction logic adapted from bioio-tifffile (https://github.com/bioimage-io/bioio-tifffile)
+        _NAME_TO_MICRONS = {
+            "pm": 1e-6,
+            "picometer": 1e-6,
+            "nm": 1e-3,
+            "nanometer": 1e-3,
+            "micron": 1,
+            "µm": 1,
+            "um": 1,
+            "\\u00B5m": 1,
+            tifffile.RESUNIT.NONE: 1,
+            tifffile.RESUNIT.MICROMETER: 1,
+            None: 1,
+            "mm": 1e3,
+            "millimeter": 1e3,
+            tifffile.RESUNIT.MILLIMETER: 1e3,
+            "cm": 1e4,
+            "centimeter": 1e4,
+            tifffile.RESUNIT.CENTIMETER: 1e4,
+            "cal": 2.54 * 1e4,
+            tifffile.RESUNIT.INCH: 2.54 * 1e4,
+        }
         for timepoint in self.metadata['timepoints']:
             for tiff_file in timepoint['path'].glob("*.tif"):
                 try:
                     with tifffile.TiffFile(str(tiff_file)) as tif:
                         page = tif.pages[0]
                         array = page.asarray()
+                        # Try to get tags, raise error if not available
+                        if not hasattr(tif.pages[0], "tags"):
+                            raise RuntimeError("TIFF page does not have 'tags' attribute. Please check your tifffile version or file format.")
+                        tags = tif.pages[0].tags
+                        # Get resolution unit
+                        unit = tags["ResolutionUnit"].value if "ResolutionUnit" in tags else None
+                        scalar = _NAME_TO_MICRONS.get(unit, 1)
+                        # Get X/Y resolution
+                        npix_x, x_res_units = tags["XResolution"].value if "XResolution" in tags else (1, 1)
+                        npix_y, y_res_units = tags["YResolution"].value if "YResolution" in tags else (1, 1)
+                        # Calculate pixel size in microns
+                        pixel_x = scalar * x_res_units / npix_x if npix_x else None
+                        pixel_y = scalar * y_res_units / npix_y if npix_y else None
                         return {
                             'width': array.shape[1],
-                            'height': array.shape[0], 
+                            'height': array.shape[0],
                             'bits': array.dtype.itemsize * 8,
-                            'dtype': array.dtype
+                            'dtype': array.dtype,
+                            'pixel_x': pixel_x,
+                            'pixel_y': pixel_y
                         }
                 except Exception as e:
                     print(f"Could not read sample image {tiff_file}: {e}")
                     continue
-        
         # Fallback defaults
         return {
             'width': 2048,
             'height': 2048,
             'bits': 16,
-            'dtype': np.uint16
+            'dtype': np.uint16,
+            'pixel_x': 1.0,
+            'pixel_y': 1.0
         }
     
     def _get_channel_info(self):
@@ -406,6 +452,7 @@ class IncucyteSource(ImageSource):
             s += row_line + '\n'
         
         return s
+    
     
     def print_timepoint_well_matrix(self):
         """Print timepoint vs well matrix"""
