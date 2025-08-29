@@ -1,3 +1,4 @@
+from enum import Enum
 import numpy as np
 from tifffile import TiffFile, xml2dict
 
@@ -5,18 +6,57 @@ from ImageSource import ImageSource
 from util import convert_to_um
 
 
-class OmeTiffSource(ImageSource):
+class TiffSource(ImageSource):
     def __init__(self, uri, metadata={}):
         super().__init__(uri, metadata)
         self.tiff = TiffFile(uri)
 
     def init_metadata(self):
-        if self.tiff.is_ome:
-            self.metadata = xml2dict(self.tiff.ome_metadata)
+        tiff = self.tiff
+        pixel_size = {}
+        position = {}
+        if tiff.is_ome:
+            self.metadata = xml2dict(tiff.ome_metadata)
             if 'OME' in self.metadata:
                 self.metadata = self.metadata['OME']
-        #self.dim_order = ''.join(reversed(self.metadata['Image']['Pixels']['DimensionOrder'].lower()))
-        self.dim_order = 'tczyx'
+            self.dim_order = ''.join(reversed(self.metadata['Image']['Pixels']['DimensionOrder'].lower()))
+
+            pixels = self.metadata['Image']['Pixels']
+            if 'PositionX' in pixels:
+                pixel_size['x'] = convert_to_um(float(pixels.get('PhysicalSizeX')), pixels.get('PhysicalSizeXUnit'))
+            if 'PositionY' in pixels:
+                pixel_size['y'] = convert_to_um(float(pixels.get('PhysicalSizeY')), pixels.get('PhysicalSizeYUnit'))
+            if 'PositionZ' in pixels:
+                pixel_size['z'] = convert_to_um(float(pixels.get('PhysicalSizeZ')), pixels.get('PhysicalSizeZUnit'))
+
+            plane = self.metadata['Image']['Pixels'].get('Plane')
+            if plane:
+                if 'PositionX' in plane:
+                    position['x'] = convert_to_um(float(plane.get('PositionX')), plane.get('PositionXUnit'))
+                if 'PositionY' in plane:
+                    position['y'] = convert_to_um(float(plane.get('PositionY')), plane.get('PositionYUnit'))
+                if 'PositionZ' in plane:
+                    position['z'] = convert_to_um(float(plane.get('PositionZ')), plane.get('PositionZUnit'))
+        else:
+            page = self.tiff.pages.first
+            self.metadata = tags_to_dict(page.tags)
+            res_unit = self.metadata.get('ResolutionUnit', '')
+            if isinstance(res_unit, Enum):
+                res_unit = res_unit.name
+            res_unit = res_unit.lower()
+            if res_unit == 'none':
+                res_unit = ''
+            res0 = convert_rational_value(self.metadata.get('XResolution'))
+            if res0 is not None and res0 != 0:
+                pixel_size['x'] = convert_to_um(1 / res0, res_unit)
+            res0 = convert_rational_value(self.metadata.get('YResolution'))
+            if res0 is not None and res0 != 0:
+                pixel_size['y'] = convert_to_um(1 / res0, res_unit)
+            self.dim_order = page.axes.replace('s', 'c').replace('r', '')
+        self.pixel_size = pixel_size
+        self.position = position
+        self.metadata['pixel_size'] = pixel_size
+        self.metadata['position'] = pixel_size
         return self.metadata
 
     def is_screen(self):
@@ -99,3 +139,19 @@ class OmeTiffSource(ImageSource):
 
     def get_acquisitions(self):
         raise NotImplementedError("The 'get_acquisitions' method must be implemented by subclasses.")
+
+
+def tags_to_dict(tags):
+    tag_dict = {}
+    for tag in tags.values():
+        tag_dict[tag.name] = tag.value
+    return tag_dict
+
+
+def convert_rational_value(value):
+    if value is not None and isinstance(value, tuple):
+        if value[0] == value[1]:
+            value = value[0]
+        else:
+            value = value[0] / value[1]
+    return value

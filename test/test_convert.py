@@ -11,11 +11,12 @@ from util import splitall, print_dict
 
 
 class TestConvert:
-    basedir = 'C:/Project/slides/DB/'
+    #basedir = 'C:/Project/slides/DB/'
     #basedir = 'D:/slides/DB/'
     #basedir = 'C:/Project/slides/Ome-tiff/'
+    basedir = 'E:/Personal/Crick/slides/test_images/'
 
-    filename = 'TestData1/experiment.db'
+    #filename = 'TestData1/experiment.db'
     #filename = '2ChannelPlusTL/experiment.db'
     #filename = 'PicoData16ProcCoverag/experiment.db'
     #filename = '241209 - TC1 TC9 test MSP MUB/experiment.db'
@@ -23,6 +24,7 @@ class TestConvert:
     #filename = 'Cells/experiment.db'
     #filename = 'NIRHTa-001.ome.tiff'
     #filename = 'single-channel.ome.tiff'
+    filename = 'volumetric Broken_NE_cropped.tif'
 
     input_filename = basedir + filename
 

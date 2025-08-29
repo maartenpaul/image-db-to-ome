@@ -27,8 +27,8 @@ def convert(input_filename, output_folder, alt_output_folder=None,
         from src.ImageDbSource import ImageDbSource
         source = ImageDbSource(input_filename)
     elif 'tif' in input_ext:
-        from src.OmeTiffSource import OmeTiffSource
-        source = OmeTiffSource(input_filename)
+        from src.TiffSource import TiffSource
+        source = TiffSource(input_filename)
     else:
         raise ValueError(f'Unsupported input file format: {input_ext}')
 
