@@ -7,12 +7,15 @@ from src.helper import create_source, create_writer
 from src.util import print_dict, print_hbytes
 
 
-def init_logging(log_filename):
+def init_logging(log_filename, verbose=False):
     basepath = os.path.dirname(log_filename)
     if basepath and not os.path.exists(basepath):
         os.makedirs(basepath)
+    handlers = [logging.FileHandler(log_filename, encoding='utf-8')]
+    if verbose:
+        handlers += [logging.StreamHandler()]
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s',
-                        handlers=[logging.StreamHandler(), logging.FileHandler(log_filename, encoding='utf-8')],
+                        handlers=handlers,
                         encoding='utf-8')
 
     logging.getLogger('ome_zarr').setLevel(logging.WARNING)     # mute verbose ome_zarr logging

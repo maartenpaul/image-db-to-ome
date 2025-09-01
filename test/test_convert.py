@@ -42,7 +42,7 @@ class TestConvert:
         ],
     )
     def test_convert(self, tmp_path, input_filename, output_format):
-        init_logging('log/db_to_zarr.log')
+        init_logging('log/db_to_zarr.log', verbose=True)
         with Timer(f'convert {input_filename} to {output_format}'):
             convert(input_filename, tmp_path, output_format=output_format)
 

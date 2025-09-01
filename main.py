@@ -13,7 +13,7 @@ parser.add_argument('--show_progress', action='store_true')
 parser.add_argument('--verbose', action='store_true')
 args = parser.parse_args()
 
-init_logging('db_to_zarr.log')
+init_logging('db_to_zarr.log', verbose=args.verbose)
 
 result = convert(
     args.inputfile,
