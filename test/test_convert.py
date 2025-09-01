@@ -5,9 +5,9 @@ import pytest
 import tempfile
 
 from converter import init_logging, convert
-from helper import create_source
+from src.helper import create_source
 from src.Timer import Timer
-from util import print_dict
+from src.util import print_dict
 
 
 class TestConvert:

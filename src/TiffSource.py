@@ -3,8 +3,8 @@ import numpy as np
 import os
 from tifffile import TiffFile, xml2dict
 
-from ImageSource import ImageSource
-from util import convert_to_um, ensure_list
+from src.ImageSource import ImageSource
+from src.util import convert_to_um, ensure_list
 
 
 class TiffSource(ImageSource):

@@ -1,14 +1,14 @@
 # https://ome-zarr.readthedocs.io/en/stable/python.html#writing-hcs-datasets-to-ome-ngff
 
-from src.OmeWriter import OmeWriter
-from src.ome_zarr_util import *
-from src.parameters import VERSION
-from src.util import split_well_name, print_hbytes
-
 #from ome_zarr.io import parse_url
 from ome_zarr.scale import Scaler
 from ome_zarr.writer import write_image, write_plate_metadata, write_well_metadata
 import zarr
+
+from src.OmeWriter import OmeWriter
+from src.ome_zarr_util import *
+from src.parameters import VERSION
+from src.util import split_well_name, print_hbytes
 
 
 class OmeZarrWriter(OmeWriter):
