@@ -3,6 +3,12 @@ import os
 import re
 
 
+def ensure_list(item):
+    if not isinstance(item, (list, tuple)):
+        item = [item]
+    return item
+
+
 def splitall(path):
     allparts = []
     while True:
@@ -60,7 +66,7 @@ def convert_dotnet_ticks_to_datetime(net_ticks):
 def convert_to_um(value, unit):
     conversions = {
         'nm': 1e-3,
-        'µm': 1, 'um': 1, 'micrometer': 1,
+        'µm': 1, 'um': 1, 'micrometer': 1, 'micron': 1,
         'mm': 1e3, 'millimeter': 1e3,
         'cm': 1e4, 'centimeter': 1e4,
         'm': 1e6, 'meter': 1e6

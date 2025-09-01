@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 
+from helper import create_source, create_writer
 from src.util import print_dict, print_hbytes
 
 
@@ -20,35 +21,9 @@ def init_logging(log_filename):
 def convert(input_filename, output_folder, alt_output_folder=None,
             output_format='omezarr2', show_progress=False, verbose=False):
 
-    input_ext = os.path.splitext(input_filename)[1].lower()
-
     logging.info(f'Importing {input_filename}')
-    if input_ext == '.db':
-        from src.ImageDbSource import ImageDbSource
-        source = ImageDbSource(input_filename)
-    elif 'tif' in input_ext:
-        from src.TiffSource import TiffSource
-        source = TiffSource(input_filename)
-    else:
-        raise ValueError(f'Unsupported input file format: {input_ext}')
-
-    if 'zar' in output_format:
-        if '3' in output_format:
-            zarr_version = 3
-            ome_version = '0.5'
-        else:
-            zarr_version = 2
-            ome_version = '0.4'
-        from src.OmeZarrWriter import OmeZarrWriter
-        writer = OmeZarrWriter(zarr_version=zarr_version, ome_version=ome_version, verbose=verbose)
-        ext = '.ome.zarr'
-    elif 'tif' in output_format:
-        from src.OmeTiffWriter import OmeTiffWriter
-        writer = OmeTiffWriter(verbose=verbose)
-        ext = '.ome.tiff'
-    else:
-        raise ValueError(f'Unsupported output format: {output_format}')
-
+    source = create_source(input_filename)
+    writer, output_ext = create_writer(output_format, verbose=verbose)
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
@@ -61,7 +36,7 @@ def convert(input_filename, output_folder, alt_output_folder=None,
         print(f'Total data size:    {print_hbytes(source.get_total_data_size())}')
 
     name = source.get_name()
-    output_path = os.path.join(output_folder, name + ext)
+    output_path = os.path.join(output_folder, name + output_ext)
     writer.write(output_path, source, name=name)
     source.close()
 
@@ -73,7 +48,7 @@ def convert(input_filename, output_folder, alt_output_folder=None,
     if alt_output_folder:
         if not os.path.exists(alt_output_folder):
             os.makedirs(alt_output_folder)
-        alt_output_path = os.path.join(alt_output_folder, name + ext)
+        alt_output_path = os.path.join(alt_output_folder, name + output_ext)
         if 'zar' in output_format:
             shutil.copytree(output_path, alt_output_path, dirs_exist_ok=True)
         else:

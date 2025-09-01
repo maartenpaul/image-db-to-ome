@@ -53,3 +53,6 @@ class ImageSource(ABC):
 
     def get_acquisitions(self):
         raise NotImplementedError("The 'get_acquisitions' method must be implemented by subclasses.")
+
+    def close(self):
+        pass
