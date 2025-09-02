@@ -80,15 +80,35 @@ class OmeZarrWriter(OmeWriter):
         zarr_location = filename
         zarr_root = zarr.open_group(zarr_location, mode='w', zarr_version=self.zarr_version)
 
-        axes = create_axes_metadata(source.get_dim_order())
-        pixel_size_scales, scaler = self._create_scale_metadata(source, source.get_position_um())
+        dim_order = source.get_dim_order()
         data = source.get_data()
+        if dim_order[-1] == 'c':
+            dim_order = 'c' + dim_order[:-1]
+            data = np.moveaxis(data, -1, 0)
+
+        axes = create_axes_metadata(dim_order)
+        pixel_size_scales, scaler = self._create_scale_metadata(source, source.get_position_um())
         size = self._write_data(zarr_root, data, axes, pixel_size_scales, scaler)
         return zarr_root, size
 
     def _write_data(self, group, data, axes, pixel_size_scales, scaler):
+        if self.zarr_version >= 3:
+            shards = []
+            chunks = []
+            # TODO: don't redefine chunks for dask/+ arrays
+            for n in data.shape:
+                if n > 10:
+                    shards += [10000]
+                    chunks += [1000]
+                else:
+                    shards += [1]
+                    chunks += [1]
+            storage_options = {'chunks': chunks, 'shards': shards}
+        else:
+            storage_options = None
+
         write_image(image=data, group=group, axes=axes, coordinate_transformations=pixel_size_scales,
-                    scaler=scaler, fmt=self.ome_format)
+                    scaler=scaler, fmt=self.ome_format, storage_options=storage_options)
         size = data.size * data.dtype.itemsize
         return size
 

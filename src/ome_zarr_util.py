@@ -89,3 +89,12 @@ def scale_dimensions_dict(shape0, scale):
             shape1 = int(shape1 * scale)
         shape[dimension] = shape1
     return shape
+
+
+def int_to_hexrgb(intrgb):
+    signed = (intrgb < 0)
+    rgb = [x / 255 for x in intrgb.to_bytes(3, signed=signed, byteorder="big")]
+    if rgb[-1] == 0:
+        rgb[-1] = 1
+    hexrgb = ''.join([hex(int(x * 255))[2:].upper().zfill(2) for x in rgb])
+    return hexrgb
