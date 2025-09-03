@@ -87,7 +87,7 @@ class OmeZarrWriter(OmeWriter):
             data = np.moveaxis(data, -1, 0)
 
         axes = create_axes_metadata(dim_order)
-        pixel_size_scales, scaler = self._create_scale_metadata(source, source.get_position_um())
+        pixel_size_scales, scaler = self._create_scale_metadata(source, dim_order, source.get_position_um())
         size = self._write_data(zarr_root, data, axes, pixel_size_scales, scaler)
         return zarr_root, size
 
@@ -98,8 +98,8 @@ class OmeZarrWriter(OmeWriter):
             # TODO: don't redefine chunks for dask/+ arrays
             for n in data.shape:
                 if n > 10:
-                    shards += [10000]
-                    chunks += [1000]
+                    shards += [10240]
+                    chunks += [1024]
                 else:
                     shards += [1]
                     chunks += [1]
@@ -112,14 +112,14 @@ class OmeZarrWriter(OmeWriter):
         size = data.size * data.dtype.itemsize
         return size
 
-    def _create_scale_metadata(self, source, translation, scaler=None):
+    def _create_scale_metadata(self, source, dim_order, translation, scaler=None):
         if scaler is None:
             scaler = Scaler()
         pixel_size_scales = []
         scale = 1
         for i in range(scaler.max_layer + 1):
             pixel_size_scales.append(
-                create_transformation_metadata(source.get_dim_order(), source.get_pixel_size_um(),
+                create_transformation_metadata(dim_order, source.get_pixel_size_um(),
                                                scale, translation))
             scale /= scaler.downscale
         return pixel_size_scales, scaler

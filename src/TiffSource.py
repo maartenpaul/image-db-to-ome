@@ -43,6 +43,7 @@ class TiffSource(ImageSource):
             else:
                 self.name = self.metadata['Image'].get('Name')
             pixels = ensure_list(self.metadata.get('Image', []))[0].get('Pixels', {})
+            self.shape = pixels.get('SizeT'), pixels.get('SizeC'), pixels.get('SizeZ'), pixels.get('SizeY'), pixels.get('SizeX')
             self.dim_order = ''.join(reversed(pixels['DimensionOrder'].lower()))
             self.dtype = np.dtype(pixels['Type'])
             if 'PositionX' in pixels:
@@ -86,6 +87,9 @@ class TiffSource(ImageSource):
                 page = self.tiff.series[0]
             else:
                 page = self.tiff.pages.first
+            self.shape = page.shape
+            while len(self.shape) < 5:
+                self.shape = tuple([1] + list(self.shape))
             self.dim_order = page.axes.lower().replace('s', 'c').replace('r', '')
             self.dtype = page.dtype
             res_unit = self.metadata.get('ResolutionUnit', '')
@@ -162,6 +166,12 @@ class TiffSource(ImageSource):
 
     def get_acquisitions(self):
         return []
+
+    def get_total_data_size(self):
+        total_size = np.prod(self.shape)
+        if self.is_plate:
+            total_size *= len(self.get_wells()) * len(self.get_fields())
+        return total_size
 
     def close(self):
         self.tiff.close()

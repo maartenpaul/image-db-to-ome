@@ -7,6 +7,9 @@ def create_source(filename):
     if input_ext == '.db':
         from src.ImageDbSource import ImageDbSource
         source = ImageDbSource(filename)
+    elif input_ext == '.isyntax':
+        from src.ISyntaxSource import ISyntaxSource
+        source = ISyntaxSource(filename)
     elif 'tif' in input_ext:
         from src.TiffSource import TiffSource
         source = TiffSource(filename)

@@ -54,5 +54,8 @@ class ImageSource(ABC):
     def get_acquisitions(self):
         raise NotImplementedError("The 'get_acquisitions' method must be implemented by subclasses.")
 
+    def get_total_data_size(self):
+        raise NotImplementedError("The 'get_total_data_size' method must be implemented by subclasses.")
+
     def close(self):
         pass

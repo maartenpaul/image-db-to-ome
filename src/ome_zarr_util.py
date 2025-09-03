@@ -44,9 +44,15 @@ def create_transformation_metadata(dimension_order, pixel_size_um, scale, transl
 
 
 def create_channel_metadata(dtype, channels, nchannels, ome_version):
-    if len(channels) < nchannels == 3:
-        labels = ['Red', 'Green', 'Blue']
-        colors = ["FF0000", "00FF00", "0000FF"]
+    if len(channels) < nchannels:
+        labels = []
+        colors = []
+        if nchannels in (3, 4):
+            labels = ['Red', 'Green', 'Blue']
+            colors = ["FF0000", "00FF00", "0000FF"]
+        if nchannels == 4:
+            labels += ['Alpha']
+            colors += ["FFFFFF"]
         channels = [{'label': label, 'color': color} for label, color in zip(labels, colors)]
 
     omezarr_channels = []

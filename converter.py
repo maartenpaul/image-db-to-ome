@@ -34,8 +34,9 @@ def convert(input_filename, output_folder, alt_output_folder=None,
     if verbose:
         print(print_dict(metadata))
         print()
-        print(source.print_well_matrix())
-        print(source.print_timepoint_well_matrix())
+        if source.is_screen():
+            print(source.print_well_matrix())
+            print(source.print_timepoint_well_matrix())
         print(f'Total data size:    {print_hbytes(source.get_total_data_size())}')
 
     name = source.get_name()

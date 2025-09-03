@@ -12,11 +12,12 @@ from src.util import print_dict
 
 class TestConvert:
     #basedir = 'C:/Project/slides/DB/'
-    basedir = 'D:/slides/DB/'
+    #basedir = 'D:/slides/DB/'
     #basedir = 'C:/Project/slides/Ome-tiff/'
     #basedir = 'E:/Personal/Crick/slides/test_images/'
+    basedir = 'D:/slides/isyntax/'
 
-    filename = 'TestData1/experiment.db'
+    #filename = 'TestData1/experiment.db'
     #filename = '2ChannelPlusTL/experiment.db'
     #filename = 'PicoData16ProcCoverag/experiment.db'
     #filename = '241209 - TC1 TC9 test MSP MUB/experiment.db'
@@ -25,6 +26,8 @@ class TestConvert:
     #filename = 'NIRHTa-001.ome.tiff'
     #filename = 'signed single-channel.ome.tiff'
     #filename = 'volumetric Broken_NE_cropped.tif'
+    filename = 'small.isyntax'
+    #filename = 'test-isyntax.isyntax'
 
     input_filename = basedir + filename
 
@@ -41,10 +44,10 @@ class TestConvert:
             ),
         ],
     )
-    def test_convert(self, tmp_path, input_filename, output_format):
-        init_logging('log/db_to_zarr.log', verbose=True)
+    def test_convert(self, tmp_path, input_filename, output_format, show_progess=True, verbose=True):
+        init_logging('log/db_to_zarr.log', verbose=verbose)
         with Timer(f'convert {input_filename} to {output_format}'):
-            convert(input_filename, tmp_path, output_format=output_format)
+            convert(input_filename, tmp_path, output_format=output_format, show_progress=show_progess, verbose=verbose)
 
         source = create_source(input_filename)
         metadata = source.init_metadata()
@@ -66,7 +69,7 @@ class TestConvert:
             #print(print_dict(metadata))
             axes = [axis['name'] for axis in metadata['axes']]
             pixel_sizes = [transform for transform in metadata['coordinateTransformations'][0] if transform['type'] == 'scale'][0]['scale']
-            pixel_size_dict = {axis: pixel_size for axis, pixel_size in zip(axes, pixel_sizes)}
+            pixel_size_dict = {axis: pixel_size for axis, pixel_size in zip(axes, pixel_sizes) if axis in 'xyz'}
             if source.is_screen():
                 wells = [well['path'].replace('/', '') for well in metadata['metadata']['plate']['wells']]
             #for data in node.data:
@@ -77,6 +80,8 @@ class TestConvert:
             elif '3' in output_format:
                 assert float(node.zarr.version) >= 0.5
 
+            print(f'Source    pixel size: {source_pixel_size}')
+            print(f'Converted pixel size: {pixel_size_dict}')
             assert pixel_size_dict.get('x') == source_pixel_size.get('x')
             assert pixel_size_dict.get('y') == source_pixel_size.get('y')
             if source.is_screen():
@@ -89,5 +94,6 @@ if __name__ == '__main__':
 
     test = TestConvert()
     input_filename = test.input_filename
-    test.test_convert(Path(tempfile.TemporaryDirectory().name), input_filename, 'omezarr2')
-    test.test_convert(Path(tempfile.TemporaryDirectory().name), input_filename, 'omezarr3')
+    # tempfile.TemporaryDirectory().name
+    test.test_convert(Path(test.basedir), input_filename, 'omezarr2')
+    #test.test_convert(Path(tempfile.TemporaryDirectory().name), input_filename, 'omezarr3')

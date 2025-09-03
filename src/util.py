@@ -9,6 +9,10 @@ def ensure_list(item):
     return item
 
 
+def get_filetitle(filename):
+    return os.path.basename(os.path.splitext(filename)[0])
+
+
 def splitall(path):
     allparts = []
     while True:
@@ -63,6 +67,43 @@ def convert_dotnet_ticks_to_datetime(net_ticks):
     return datetime(1, 1, 1) + timedelta(microseconds=net_ticks // 10)
 
 
+def xml_content_to_dict(element):
+    key = element.tag
+    children = list(element)
+    if key == 'Array':
+        res = [xml_content_to_dict(child) for child in children]
+        return res
+    if len(children) > 0:
+        if children[0].tag == 'Array':
+            value = []
+        else:
+            value = {}
+        for child in children:
+            child_value = xml_content_to_dict(child)
+            if isinstance(child_value, list):
+                value.extend(child_value)
+            else:
+                value |= child_value
+    else:
+        value = element.text
+        if value is not None:
+            try:
+                if '"' in value:
+                    value = value.replace('"', '')
+                elif '.' in value:
+                    value = float(value)
+                else:
+                    value = int(value)
+            except ValueError:
+                pass
+
+    if key == 'DataObject':
+        key = element.attrib['ObjectType']
+    if key == 'Attribute':
+        key = element.attrib['Name']
+    return {key: value}
+
+
 def convert_to_um(value, unit):
     conversions = {
         'nm': 1e-3,
@@ -74,7 +115,7 @@ def convert_to_um(value, unit):
     return value * conversions.get(unit, 1)
 
 
-def print_dict(value, tab=0, bullet=False):
+def print_dict(value, tab=0, max_len=250, bullet=False):
     s = ''
     if isinstance(value, dict):
         for key, subvalue in value.items():
@@ -89,7 +130,10 @@ def print_dict(value, tab=0, bullet=False):
                 for v in subvalue:
                     s += print_dict(v, tab+1, bullet=True)
             else:
-                s += str(subvalue)
+                subvalue = str(subvalue)
+                if len(subvalue) > max_len:
+                    subvalue = subvalue[:max_len] + '...'
+                s += subvalue
     else:
         s += str(value) + ' '
     return s
