@@ -54,7 +54,6 @@ class OmeZarrWriter(OmeWriter):
         well_paths = ['/'.join(split_well_name(well)) for well in wells]
         field_paths = source.get_fields()
 
-        axes = create_axes_metadata(source.get_dim_order())
         acquisitions = source.get_acquisitions()
         write_plate_metadata(zarr_root, row_names, col_names, well_paths,
                              name=name, field_count=len(field_paths), acquisitions=acquisitions,
@@ -66,11 +65,10 @@ class OmeZarrWriter(OmeWriter):
             well_group = row_group.require_group(str(col))
             write_well_metadata(well_group, field_paths, fmt=self.ome_format)
 
-            pixel_size_scales, scaler = self._create_scale_metadata(source, source.get_position_um(well_id))
             for field_index, field in enumerate(field_paths):
                 image_group = well_group.require_group(str(field))
                 data = source.get_data(well_id, field_index)
-                size = self._write_data(image_group, data, axes, pixel_size_scales, scaler)
+                size = self._write_data(image_group, data, source, well_id)
                 total_size += size
 
         return zarr_root, total_size
@@ -80,18 +78,18 @@ class OmeZarrWriter(OmeWriter):
         zarr_location = filename
         zarr_root = zarr.open_group(zarr_location, mode='w', zarr_version=self.zarr_version)
 
-        dim_order = source.get_dim_order()
         data = source.get_data()
+        size = self._write_data(zarr_root, data, source)
+        return zarr_root, size
+
+    def _write_data(self, group, data, source, well_id=None):
+        dim_order = source.get_dim_order()
         if dim_order[-1] == 'c':
             dim_order = 'c' + dim_order[:-1]
             data = np.moveaxis(data, -1, 0)
-
         axes = create_axes_metadata(dim_order)
-        pixel_size_scales, scaler = self._create_scale_metadata(source, dim_order, source.get_position_um())
-        size = self._write_data(zarr_root, data, axes, pixel_size_scales, scaler)
-        return zarr_root, size
+        pixel_size_scales, scaler = self._create_scale_metadata(source, dim_order, source.get_position_um(well_id))
 
-    def _write_data(self, group, data, axes, pixel_size_scales, scaler):
         if self.zarr_version >= 3:
             shards = []
             chunks = []
