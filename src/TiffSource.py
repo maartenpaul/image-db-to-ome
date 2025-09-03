@@ -3,7 +3,7 @@ import numpy as np
 import os
 from tifffile import TiffFile, xml2dict
 
-from ome_zarr_util import int_to_hexrgb
+from src.ome_zarr_util import int_to_hexrgb
 from src.ImageSource import ImageSource
 from src.util import convert_to_um, ensure_list
 
@@ -98,11 +98,11 @@ class TiffSource(ImageSource):
             res_unit = res_unit.lower()
             if res_unit == 'none':
                 res_unit = ''
-            if 'x' not in pixel_size:
+            if 'x' in pixel_size:
                 res0 = convert_rational_value(self.metadata.get('XResolution'))
                 if res0 is not None and res0 != 0:
                     pixel_size['x'] = convert_to_um(1 / res0, res_unit)
-            if 'y' not in pixel_size:
+            if 'y' in pixel_size:
                 res0 = convert_rational_value(self.metadata.get('YResolution'))
                 if res0 is not None and res0 != 0:
                     pixel_size['y'] = convert_to_um(1 / res0, res_unit)
